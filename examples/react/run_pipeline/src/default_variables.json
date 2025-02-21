@@ -1,0 +1,12 @@
+{
+  "schema": null,
+  "uiSchema": null,
+  "pipeline": null,
+  "pipelineVersion": null,
+  "pipelinePublished": null,
+
+  "runButtonText": "Run Pipeline",
+  "runButtonColor": "secondary",
+  "showPipeline": true,
+  "showJobId": true
+}
