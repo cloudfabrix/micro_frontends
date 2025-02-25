@@ -80,7 +80,8 @@ export default function RunPipeline(props) {
         setJobRunning(true)
         setJobId("")
         setJobDuration(0)
-        let url = `/api/v2/pipelines/${props["draft"] ? "draft" : "pipeline"}/${props["pipeline"]}/version/${props["version"]}/run`
+        let sites = encodeURIComponent(props["sites"])
+        let url = `/api/v2/pipelines/${props["draft"] ? "draft" : "pipeline"}/${props["pipeline"]}/version/${props["version"]}/run?sites=${sites}`
         let body = [formData]
         setJobStatus("Sending request")
         fetch(url, {

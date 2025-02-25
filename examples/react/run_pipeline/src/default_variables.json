@@ -4,6 +4,7 @@
   "pipeline": null,
   "pipelineVersion": null,
   "pipelinePublished": null,
+  "sites": ".*",
 
   "runButtonText": "Run Pipeline",
   "runButtonColor": "secondary",

@@ -122,9 +122,8 @@ if __name__ == "__main__":
                                         "type": "Control",
                                         "scope": "#/properties/query_test",
                                         "options": {
-                                            "apiUrl": "/api/v2/pstreams/pstream/att_app_cmdb/data?offset=0&limit=100",
-                                            "labelField": "Number",
-                                            "valueField": "Number"
+                                            "apiUrl": "/api/v2/pstreams/pstream/oia-alerts-stream/data?offset=0&limit=100",
+                                            "valueField": "a_component_id"
                                         }
                                     }
                                 ]

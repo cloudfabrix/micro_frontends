@@ -29,6 +29,7 @@ const App = (params) => {
     let pipeline = fixed_variables["pipeline"]
     let pipelineVersion = fixed_variables["pipelineVersion"]
     let pipelinePublished = fixed_variables["pipelinePublished"]
+    let sites = fixed_variables["sites"]
     let runButtonText = fixed_variables["runButtonText"]
     let runButtonColor = fixed_variables["runButtonColor"]
     let showPipeline = fixed_variables["showPipeline"]
@@ -61,6 +62,7 @@ const App = (params) => {
                     pipeline={pipeline}
                     version={pipelineVersion}
                     draft={!pipelinePublished}
+                    sites={sites}
                     runButtonText={runButtonText}
                     runButtonColor={runButtonColor}
                     showPipeline={showPipeline}
