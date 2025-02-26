@@ -4,9 +4,11 @@ customizable using fixed variables provided by the dashboard.
 
 This widget displays the form, and sends the data provided in the form as input to the pipeline, as a single row of data. Pipeline should use `@exec:get-input` to access the input.
 
-![Run Pipeline Example Image 1](images/run_pipeline_scr1.png)
-![Run Pipeline Example Image 2](images/run_pipeline_scr2.png)
-![Run Pipeline Example Image 3](images/run_pipeline_scr3.png)
+<p float="left">
+  <img src="./images/run_pipeline_scr1.png" width="500" height="300" />
+  <img src="./images/run_pipeline_scr2.png" width="500" height="300" /> 
+  <img src="./images/run_pipeline_scr3.png" width="500" />
+</p>
 
 # Using the widget
 ## Fixed variables
