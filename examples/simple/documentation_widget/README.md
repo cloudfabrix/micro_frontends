@@ -1,6 +1,6 @@
 # About this widget
 
-`documentation_widget` widget is an example widget that renders documentation as an RDAF Dashboard. Contents are dashboard loaded from YAML content that is typically provided as Dashboard attachment.
+`documentation_widget` widget is an example widget that renders documentation as an RDAF Dashboard. Contents of the dashboard are loaded from YAML text that is typically provided as a Dashboard attachment.
 
 <img src='images/doc_widget.png'/>
 
