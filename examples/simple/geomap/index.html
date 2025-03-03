@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>US Geomap with City Status</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/leaflet.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/leaflet.css"/>
+    <style>
+        body {
+            background-color: #121212;
+            color: #ffffff;
+            font-family: Arial, sans-serif;
+            text-align: center;
+        }
+
+        #map {
+            height: 600px;
+            width: 100%;
+            border: 0 solid #ffffff;
+        }
+    </style>
+</head>
+<body style="margin: 0 0 0 0;">
+<div id="map"></div>
+<script>
+
+    const params = new URLSearchParams(window.location.search)
+    let input_variables = {}
+    if (params.has("fixed_variables")) {
+        console.log("Fixed variables found!")
+        const variables = params.get("fixed_variables")
+        input_variables = JSON.parse(atob(variables))
+        console.log(input_variables)
+    } else {
+        console.error("Fixed variables not found!")
+    }
+    let variables = {...{locations: [], stream_name: "rum_stream"}, ...input_variables}
+
+    const locations = variables["locations"]
+    const stream_name = variables["stream_name"]
+
+
+    const query = encodeURIComponent("ua_apdexCategory != 'SATISFIED'")
+    const aggs = encodeURIComponent("sum:count_")
+    const url = `/api/v2/pstreams/pstream/${stream_name}/data?cfxql_query=${query}&group_by=city&aggs=${aggs}&offset=0&limit=100`
+    fetch(url, {
+            method: "GET",
+            headers: {
+                "Content-type": "application/json; charset=UTF-8"
+            }
+        }
+    ).then(response => response.json()).then(respJson => {
+        if ("pstream_data" in respJson) {
+            let points = []
+            respJson["pstream_data"].forEach(row => {
+                let city = row["city"]
+                if (city in locations) {
+                    let loc = locations[city]
+                    let state = loc["state"]
+                    let lon = loc["longitude"]
+                    let lat = loc["latitude"]
+
+                    let count = row["count__sum"]
+                    let color = count >= 10 ? "red" : "yellow"
+                    let label = `${city}, ${state}. Count: ${count}`
+                    points.push({"lat": lat, "lon": lon, "color": color, "label": label})
+                }
+            });
+            const map = L.map('map').setView([30, -96], 4);
+
+            L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/">CARTO</a>'
+            }).addTo(map);
+            for (let data of points) {
+                L.circleMarker([data.lat, data.lon], {
+                    color: data.color,
+                    radius: 10,
+                    fillOpacity: 0.8
+                }).addTo(map).bindPopup(data.label);
+            }
+        }
+    })
+</script>
+</body>
+</html>
