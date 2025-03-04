@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Nightingale Chart</title>
+  <style>
+    /* Full-screen container with a dark background */
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100vw;
+      height: 100vh;
+      background: #101F2A;
+      overflow: hidden;
+      font-family: Arial, sans-serif;
+    }
+    /* Centered ECharts container */
+    #chart {
+      width: 800px;
+      height: 500px;
+      margin: 40px auto;
+      background: transparent;
+    }
+  </style>
+</head>
+<body>
+  <!-- Container for the ECharts visualization -->
+  <div id="chart"></div>
+
+  <!-- Load ECharts from CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+
+  <script>
+    // 1. Initialize ECharts
+    const chartDom = document.getElementById('chart');
+    const myChart = echarts.init(chartDom);
+
+    // 2. Define desired alert severities to display
+    const desiredSeverities = ['CRITICAL', 'WARNING', 'INFORMATION', 'MAJOR', 'CLEAR'];
+
+    /**
+     * Renders the Nightingale chart with the given data.
+     * @param {Array} dataArray - Array of objects { name, value } for ECharts.
+     */
+    function updateChart(dataArray) {
+      const option = {
+        backgroundColor: 'transparent',
+        title: {
+          text: 'Nightingale Chart - Filtered Severities',
+          left: 'center',
+          top: '2%',
+          textStyle: {
+            color: '#ffffff',
+            fontSize: 20,
+            fontWeight: 'bold'
+          }
+        },
+        tooltip: {
+          trigger: 'item',
+          formatter: '{a} <br/>{b}: {c} ({d}%)',
+          backgroundColor: 'rgba(50,50,50,0.7)',
+          textStyle: { color: '#ffffff' }
+        },
+        legend: {
+          orient: 'horizontal',
+          bottom: '5%',
+          left: 'center',
+          textStyle: {
+            color: '#ffffff',
+            fontSize: 12
+          }
+        },
+        series: [
+          {
+            name: 'Aggregated Severity',
+            type: 'pie',
+            roseType: 'area',
+            radius: [10, 110],
+            center: ['50%', '50%'],
+            itemStyle: { borderRadius: 8 },
+            avoidLabelOverlap: true,
+            labelLayout: { hideOverlap: true },
+            label: {
+              color: '#ffffff',
+              fontSize: 12,
+              formatter: '{b}\n{c}'
+            },
+            labelLine: {
+              length: 15,
+              length2: 10,
+              lineStyle: { color: '#ffffff' }
+            },
+            data: dataArray
+          }
+        ]
+      };
+
+      // Render the chart using the configuration
+      myChart.setOption(option);
+    }
+
+    // 3. Construct the API URL to fetch aggregated data from the persistent stream
+    const apiUrl = '/api/v2/pstreams/pstream/oia-alerts-stream/data'
+      + '?cfxql_query=*'  // Fetch all records
+      + '&group_by=a_severity'
+      + '&aggs=sum%3Acount_%3Acount__sum'
+      + '&offset=0&limit=100';
+
+    // 4. Fetch data from the CloudFabrix pstream API
+    fetch(apiUrl, { headers: { 'accept': 'application/json' } })
+      .then(response => {
+        if (!response.ok) {
+          throw new Error('Failed to load data: ' + response.statusText);
+        }
+        return response.json();
+      })
+      .then(data => {
+        let chartData = [];
+        if (data && data.pstream_data && data.pstream_data.length > 0) {
+          chartData = data.pstream_data
+            .filter(row => desiredSeverities.includes(row.a_severity))
+            .map(row => ({
+              name: row.a_severity,
+              value: Number(row.count__sum) || 0
+            }));
+        }
+        updateChart(chartData);
+      })
+      .catch(error => {
+        console.error('Error during fetch or data processing:', error);
+      });
+
+    // 5. Make the chart responsive to window resizing
+    window.addEventListener('resize', () => {
+      myChart.resize();
+    });
+  </script>
+</body>
+</html>
