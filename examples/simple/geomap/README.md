@@ -15,10 +15,32 @@ Fixed variables are used to customize this widget.
 The `stream_name` variable determines which stream to query for
 count data.
 
+Default: "rum_stream"
+
+### cfxql_query
+
+The cfxql query used when retrieving stream data.
+
+Default: "ua_apdexCategory != 'SATISFIED'"
+
+### group_by
+
+The `group_by` query parameter used when retrieving stream data.
+
+Default: "city"
+
+### color_threshold
+
+The "count" at which a point becomes red.
+
+Default: 10
+
 ### locations
 
 The `locations` variable provides information on cities such as their
 state and coordinates.
+
+Default: []
 
 Example:
 

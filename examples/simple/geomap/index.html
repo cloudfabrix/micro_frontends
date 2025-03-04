@@ -35,15 +35,24 @@
     } else {
         console.error("Fixed variables not found!")
     }
-    let variables = {...{locations: [], stream_name: "rum_stream"}, ...input_variables}
+    let default_fixed_variables = {
+        locations: [],
+        stream_name: "rum_stream",
+        cfxql_query: "ua_apdexCategory != 'SATISFIED'",
+        group_by: "city",
+        color_threshold: 10
+    }
+
+    let variables = {...default_fixed_variables, ...input_variables}
 
     const locations = variables["locations"]
     const stream_name = variables["stream_name"]
 
 
-    const query = encodeURIComponent("ua_apdexCategory != 'SATISFIED'")
+    const query = encodeURIComponent(variables["cfxql_query"])
     const aggs = encodeURIComponent("sum:count_")
-    const url = `/api/v2/pstreams/pstream/${stream_name}/data?cfxql_query=${query}&group_by=city&aggs=${aggs}&offset=0&limit=100`
+    const group_by = encodeURIComponent(variables["group_by"])
+    const url = `/api/v2/pstreams/pstream/${stream_name}/data?cfxql_query=${query}&group_by=${group_by}&aggs=${aggs}&offset=0&limit=100`
     fetch(url, {
             method: "GET",
             headers: {
@@ -54,7 +63,7 @@
         if ("pstream_data" in respJson) {
             let points = []
             respJson["pstream_data"].forEach(row => {
-                let city = row["city"]
+                let city = row[variables["group_by"]]
                 if (city in locations) {
                     let loc = locations[city]
                     let state = loc["state"]
@@ -62,7 +71,7 @@
                     let lat = loc["latitude"]
 
                     let count = row["count__sum"]
-                    let color = count >= 10 ? "red" : "yellow"
+                    let color = count >= variables["color_threshold"] ? "red" : "yellow"
                     let label = `${city}, ${state}. Count: ${count}`
                     points.push({"lat": lat, "lon": lon, "color": color, "label": label})
                 }
