@@ -9,7 +9,6 @@ This guide covers:
 6. **How to adapt the chart to different requirements**  
 ---
 <img src='images/nightingalechart.png'/>
----
 
 ## 1. Overview
 
@@ -48,9 +47,9 @@ Below is a simplified example of a dashboard JSON that demonstrates how to use t
 
 ```jsonc
 {
-  "name": "alerts-and-incidents-analytics-mktg-test",
-  "label": "Alerts Analytics (Mktg Test)",
-  "description": "oia-alerts-stream: Insights",
+  "name": "alerts-and-incidents-analytics",
+  "label": "Alerts Analytics",
+  "description": "Alert Insights",
   "dashboard_folder": "Training",
   "version": "1.0.0",
   "enabled": false,
@@ -73,11 +72,10 @@ Below is a simplified example of a dashboard JSON that demonstrates how to use t
         {
           "title": "Alerts By Severity",
           "widget_type": "custom_widget",
-          "widget_implementation": "alerts-and-incidents-analytics-mktg-test/nightingale_chart",
+          "widget_implementation": "alerts-and-incidents-analytics/nightingale_chart",
           "height": 6,
           "min_width": 6,
-          "max_width": 6,
-          "widget_id": "f2dd0ffd2e"
+          "max_width": 6
         }
       ]
     }
