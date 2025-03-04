@@ -357,7 +357,7 @@ While the above example is tailored to `oia-alerts-stream`, you can easily adapt
 
 ## 7. Conclusion
 
-By combining **ECharts** with the CloudFabrix **Persistent Stream** API, you can create a variety of custom data visualizations, including a Nightingale chart. The main steps involve:
+By combining **ECharts** with the CloudFabrix **Persistent Stream**, you can create a variety of custom data visualizations, including a Nightingale chart. The main steps involve:
 
 1. **Configuring** a dashboard JSON to include a custom widget.  
 2. **Creating** an HTML file that loads ECharts and fetches data from the persistent stream.  
