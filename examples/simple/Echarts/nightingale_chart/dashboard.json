@@ -1,0 +1,46 @@
+{
+    "name": "alerts-and-incidents-analytics",
+    "label": "Alerts Analytics",
+    "description": "Alert Insights",
+    "dashboard_folder": "Training",
+    "version": "1.0.0",
+    "enabled": false,
+    "stream": "oia-alerts-stream",
+    "default_storyboard": "Training",
+    "use_storyboard": true,
+    "dashboard_type": "dashboard",
+    "live_edit": true,
+    "dashboard_filters": {
+        "time_filter": true,
+        "default_time_filter_labels": [
+            "Last 12 months"
+        ]
+    },
+    "dashboard_sections": [
+      {
+        "title": "Alerts and Incidents Analytics (Mktg Test)",
+        "show_filter": true,
+        "widgets": [
+          {
+            "title": "Alerts By Severity",
+            "widget_type": "custom_widget",
+            "widget_implementation": "alerts-and-incidents-analytics/nightingale_chart",
+            "height": 6,
+            "min_width": 6,
+            "max_width": 6
+          }
+        ]
+      }
+    ],
+    "custom_widgets": {
+      "nightingale_chart": {
+        "artifacts": {
+          "main": {
+            "attachment": "nightingale_chart.html",
+            "content_type": "text/html",
+            "is_template": true
+          }
+        }
+      }
+    }
+  }

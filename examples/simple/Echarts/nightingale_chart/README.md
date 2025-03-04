@@ -1,4 +1,5 @@
-**Nightingale Chart using ECharts as a custom widget** 
+# Nightingale Chart using ECharts as a Custom Widget
+
 This guide covers:
 
 1. **Overview of the technology stack**  
