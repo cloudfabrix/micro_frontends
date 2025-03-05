@@ -13,7 +13,7 @@ This guide covers:
 
 ## 1. Overview
 
-**ECharts** is a powerful open-source visualization library that enables a wide variety of chart types, including pie charts, line charts, bar charts, and more specialized charts like the **Nightingale chart** (also known as a “rose” chart). 
+[ECharts](https://echarts.apache.org/examples/en/index.html) is a powerful open-source visualization library that enables a wide variety of chart types, including pie charts, line charts, bar charts, and more specialized charts like the **Nightingale chart** (also known as a “rose” chart). 
 
 Within the **CloudFabrix** platform, you can define **custom widgets** that leverage external JavaScript libraries. This allows you to fetch data from **persistent streams** (pstreams) and then render visualizations directly in your dashboards.
 
@@ -50,7 +50,7 @@ Below is a simplified example of a dashboard JSON that demonstrates how to use t
 {
   "name": "alerts-and-incidents-analytics",
   "label": "Alerts Analytics",
-  "description": "Alert Insights",
+  "description": "Alert Insights from oia-alerts-stream",
   "dashboard_folder": "Training",
   "version": "1.0.0",
   "enabled": false,
@@ -67,13 +67,19 @@ Below is a simplified example of a dashboard JSON that demonstrates how to use t
   },
   "dashboard_sections": [
     {
-      "title": "Alerts and Incidents Analytics (Mktg Test)",
+      "title": "Alerts and Incidents Analytics",
       "show_filter": true,
       "widgets": [
         {
           "title": "Alerts By Severity",
           "widget_type": "custom_widget",
-          "widget_implementation": "alerts-and-incidents-analytics/nightingale_chart",
+          "widget_implementation": "alerts-and-incidents-analytics-mktg-test/nightingale_chart",
+          "fixed_variables": {
+            "stream": "oia-alerts-stream",
+            "column_name": "a_severity",
+            "my_agg": "sum%3Acount_%3Acount__sum",
+            "my_offset": "0&limit=100"
+          },
           "height": 6,
           "min_width": 6,
           "max_width": 6
@@ -102,6 +108,20 @@ Below is a simplified example of a dashboard JSON that demonstrates how to use t
 
 - **custom_widgets** → **nightingale_chart**  
   Informs the system there is a custom widget named `nightingale_chart`. The `"main"` artifact references an HTML file (`nightingale_chart.html`) in my attachments section that is used to render the chart.
+- **fixed_variables**  
+  Fixed variables are used to customize this widget at runtime without modifying the underlying JavaScript code. They are defined in the dashboard JSON and inserted into the HTML file via the templating engine.
+  - **stream**  
+  *Description:* Specifies the name of the persistent stream from which data is fetched.  
+  *Value:* `oia-alerts-stream`
+  - **column_name**  
+  *Description:* The column by which the data is grouped.  
+  *Value:* `a_severity`
+  - **my_agg**  
+  *Description:* Encoded aggregation function and column for URL use.  
+  *Value:* `sum:count_:count__sum` (encoded as `sum%3Acount_%3Acount__sum`)
+  - **my_offset**  
+  *Description:* Pagination parameters that determine the starting record and the number of records to retrieve.  
+  *Value:* `0&limit=100`
 
 ---
 
@@ -120,7 +140,6 @@ Below is a sample `nightingale_chart.html` which:
   <meta charset="UTF-8" />
   <title>Nightingale Chart</title>
   <style>
-    /* Make the container occupy full screen, dark background */
     html, body {
       margin: 0;
       padding: 0;
@@ -130,7 +149,6 @@ Below is a sample `nightingale_chart.html` which:
       overflow: hidden;
       font-family: Arial, sans-serif;
     }
-    /* ECharts container to place the chart in the center */
     #chart {
       width: 800px;
       height: 500px;
@@ -140,12 +158,8 @@ Below is a sample `nightingale_chart.html` which:
   </style>
 </head>
 <body>
-  <!-- This DIV element is where ECharts will render the visualization -->
   <div id="chart"></div>
-
-  <!-- Load ECharts from a CDN -->
   <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
-
   <script>
     // 1) Initialize ECharts
     const chartDom = document.getElementById('chart');
@@ -159,11 +173,10 @@ Below is a sample `nightingale_chart.html` which:
      * @param {Array} dataArray - Array of { name, value } objects for ECharts
      */
     function updateChart(dataArray) {
-      // Configure the Nightingale (rose) chart
       const option = {
         backgroundColor: 'transparent',
         title: {
-          text: 'Nightingale Chart - Filtered Severities',
+          text: 'Nightingale Chart',
           left: 'center',
           top: '2%',
           textStyle: {
@@ -176,9 +189,7 @@ Below is a sample `nightingale_chart.html` which:
           trigger: 'item',
           formatter: '{a} <br/>{b}: {c} ({d}%)',
           backgroundColor: 'rgba(50,50,50,0.7)',
-          textStyle: {
-            color: '#ffffff'
-          }
+          textStyle: { color: '#ffffff' }
         },
         legend: {
           orient: 'horizontal',
@@ -193,20 +204,18 @@ Below is a sample `nightingale_chart.html` which:
           {
             name: 'Aggregated Severity',
             type: 'pie',
-            // 'roseType' enables the rose-chart style
             roseType: 'area',
             radius: [10, 110],
             center: ['50%', '50%'],
             itemStyle: {
               borderRadius: 8
             },
-            // Helps avoid label overlap
             avoidLabelOverlap: true,
             labelLayout: { hideOverlap: true },
             label: {
               color: '#ffffff',
               fontSize: 12,
-              formatter: '{b}\n{c}' // display name + count
+              formatter: '{b}\n{c}'
             },
             labelLine: {
               length: 15,
@@ -222,18 +231,17 @@ Below is a sample `nightingale_chart.html` which:
       myChart.setOption(option);
     }
 
-    // 3) Build the API URL to fetch aggregated data from the persistent stream
-    //    group_by=a_severity and sum the 'count_' column for each severity
-    const apiUrl = '/api/v2/pstreams/pstream/oia-alerts-stream/data'
-      + '?cfxql_query=*' // fetch all data (no additional filter)
-      + '&group_by=a_severity'
-      + '&aggs=sum%3Acount_%3Acount__sum'
-      + '&offset=0&limit=100';
+    // 3) Build the API URL using fixed variables from the widget configuration
+    // The following variables will be replaced by the templating engine:
+    // {{stream}}, {{column_name}}, {{my_agg}}, and {{my_offset}}
+    const apiUrl = '/api/v2/pstreams/pstream/{{stream}}/data'
+      + '?cfxql_query=*'
+      + '&group_by={{column_name}}'
+      + '&aggs={{my_agg}}'
+      + '&offset={{my_offset}}';
 
-    // 4) Fetch data via the CloudFabrix pstream API
-    fetch(apiUrl, {
-      headers: { 'accept': 'application/json' }
-    })
+    // 4) Fetch data via the CloudFabrix persistent stream API
+    fetch(apiUrl, { headers: { 'accept': 'application/json' } })
       .then(response => {
         if (!response.ok) {
           throw new Error('Failed to load data: ' + response.statusText);
@@ -242,26 +250,22 @@ Below is a sample `nightingale_chart.html` which:
       })
       .then(data => {
         let chartData = [];
-
-        // 5) Process the API response
-        //    data.pstream_data should be an array of rows, each with "a_severity" and "count__sum"
         if (data && data.pstream_data && data.pstream_data.length > 0) {
           chartData = data.pstream_data
+            // 5) Filter and transform the data into the required format
             .filter(row => desiredSeverities.includes(row.a_severity))
             .map(row => ({
               name: row.a_severity,
               value: Number(row.count__sum) || 0
             }));
         }
-
-        // 6) Update the chart with the processed data
         updateChart(chartData);
       })
       .catch(error => {
-        console.error('Error during fetch or data processing:', error);
+        console.error('Error fetching data:', error);
       });
 
-    // 7) Make the chart responsive
+    // 6) Ensure the chart is responsive
     window.addEventListener('resize', () => {
       myChart.resize();
     });
@@ -288,17 +292,40 @@ Below is a sample `nightingale_chart.html` which:
    ```
    This prepares the ECharts instance within the specified container.
 
-4. **Fetching Data**  
+4. **Constructing the API URL**  
+   - The API URL is built using placeholders (`{{stream}}`, `{{column_name}}`, `{{my_agg}}`, `{{my_offset}}`).
+   - At runtime, these placeholders are replaced with the corresponding fixed variable values from the dashboard JSON, dynamically constructing the URL.
+     
+   **Example:** 
+
+   ```js
+   const apiUrl = '/api/v2/pstreams/pstream/{{stream}}/data'
+    + '?cfxql_query=*'
+    + '&group_by={{column_name}}'
+    + '&aggs={{my_agg}}'
+    + '&offset={{my_offset}}';
+   ```
+   If the fixed variables are set as:
+   - `stream`: `"oia-alerts-stream"`
+   - `column_name`: `"a_severity"`
+   - `my_agg`: `"sum%3Acount_%3Acount__sum"`
+   - `my_offset`: `"0&limit=100"`
+  
+   The resulting URL will be:
+   ```
+   /api/v2/pstreams/pstream/oia-alerts-stream/data?cfxql_query=*&group_by=a_severity&aggs=sum%3Acount_%3Acount__sum&offset=0&limit=100
+   ```
+   This dynamic substitution makes the widget highly configurable—allowing you to adjust the data source, grouping, aggregation, or pagination simply by updating the fixed variables.
+
+5. **Fetching Data**  
    ```js
    fetch(apiUrl, { headers: { 'accept': 'application/json' } })
      .then(response => response.json())
      ...
    ```
-   - The `apiUrl` references the CloudFabrix endpoint.  
-   - We pass `?cfxql_query=*` to fetch all records.  
-   - We use `group_by=a_severity` and `aggs=sum:count_:count__sum` to get aggregated counts per severity.
+   - Data is fetched from the CloudFabrix persistent stream API.
 
-5. **Filtering & Transforming**  
+6. **Filtering & Transforming**  
    ```js
    .filter(row => desiredSeverities.includes(row.a_severity))
    .map(row => ({
@@ -309,7 +336,7 @@ Below is a sample `nightingale_chart.html` which:
    - We only keep severities that match an array of interest: `[ 'CRITICAL', 'WARNING', ... ]`.  
    - We convert each row into the ECharts format: `{ name, value }`.
 
-6. **Nightingale (Rose) Chart Configuration**  
+7. **Nightingale (Rose) Chart Configuration**  
    ```js
    series: [
      {
@@ -321,7 +348,7 @@ Below is a sample `nightingale_chart.html` which:
    ```
    - Setting `roseType` to `'area'` results in the “rose” style slices.
 
-7. **Rendering and Responsiveness**  
+8. **Rendering and Responsiveness**  
    - `myChart.setOption(option);` draws the chart.  
    - An event listener triggers `myChart.resize()` on window resize, ensuring the visualization adapts to the new dimensions.
 
