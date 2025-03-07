@@ -1,0 +1,34 @@
+{
+    "name": "oia-alerts-gradient-stacked-chart",
+    "label": "OIA Alerts Gradient Stacked Chart",
+    "live_edit": true,
+    "version": "1.0.0",
+    "description": "OIA Alerts Gradient Stacked Chart",
+    "enabled": false,
+    "dashboard_sections": [
+        {
+            "title": "Chart",
+            "widgets": [
+                {
+                    "title": "Chart",
+                    "widget_type": "custom_widget",
+                    "widget_implementation": "oia-alerts-gradient-stacked-chart/gradient_stacked_chart",
+                    "min_width": 12,
+                    "min_height": 12,
+                    "widget_id": "4e2d532f"
+                }
+            ]
+        }
+    ],
+    "custom_widgets": {
+        "gradient_stacked_chart": {
+            "artifacts": {
+                "main": {
+                    "attachment": "index.html",
+                    "content_type": "text/html",
+                    "is_template": false
+                }
+            }
+        }
+    }
+}

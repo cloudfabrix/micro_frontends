@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8"/>
+    <title>Gradient Stacked Area Chart</title>
+    <style>
+        html, body {
+            margin: 0;
+            padding: 0;
+            width: 100vw;
+            height: 100vh;
+            background: #101F2A;
+            overflow: hidden;
+            font-family: Arial, sans-serif;
+        }
+
+        #chart {
+            width: 800px;
+            height: 500px;
+            margin: 40px auto;
+            background: transparent;
+        }
+    </style>
+</head>
+<body>
+<div id="chart"></div>
+<script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+<script>
+    const chartDom = document.getElementById('chart');
+    const chart = echarts.init(chartDom);
+
+    // The severities we want to show
+    const severities = ['SEVERE', 'CRITICAL', 'MAJOR', 'MINOR', 'WARNING'];
+    const colors = {
+        SEVERE: ["#E71C1C", "#f11313"],
+        CRITICAL: ["#E53935", "#f32c28"],
+        MAJOR: ["#F57C00", "#ff8201"],
+        MINOR: ["#FFA726", "#ffa317"],
+        WARNING: ["#FFD54F", "#ffd52f"]
+    }
+
+    function updateChart(points, dates) {
+
+        function createSeries(name, data) {
+            return {
+                name: name,
+                type: 'line',
+                stack: 'Total',
+                smooth: true,
+                lineStyle: {
+                    width: 0
+                },
+                showSymbol: false,
+                areaStyle: {
+                    opacity: 0.8,
+                    color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                        {
+                            offset: 0,
+                            color: colors[name][0]
+                        },
+                        {
+                            offset: 1,
+                            color: colors[name][1]
+                        }
+                    ])
+                },
+                emphasis: {
+                    focus: 'series'
+                },
+                data: data
+            }
+        }
+
+        //Only show severities that actually exist in data
+        let shownSeverities = severities.filter(sev => sev in points)
+        const option = {
+            color: shownSeverities.map(sev => colors[sev][0]),
+            backgroundColor: '#101F2A',
+            title: {
+                text: 'Gradient Stacked Area Chart',
+                textStyle: {
+                    color: '#ffffff'
+                }
+            },
+            tooltip: {
+                trigger: 'axis',
+                axisPointer: {
+                    type: 'cross',
+                    label: {backgroundColor: '#6a7985'}
+                }
+            },
+            textStyle: {
+                color: '#ffffff'
+            },
+            legend: {
+                data: shownSeverities,
+                textStyle: {
+                    color: '#ffffff'
+                },
+                right: '10%',
+                top: 10
+            },
+            toolbox: {
+                feature: {
+                    saveAsImage: {}
+                }
+            },
+            grid: {
+                left: '3%',
+                right: '4%',
+                bottom: '3%',
+                containLabel: true
+            },
+            xAxis: [
+                {
+                    type: 'category',
+                    boundaryGap: false,
+                    data: dates.slice(0, -1).map(date => date.split(',')[0])
+                }
+            ],
+            yAxis: [
+                {
+                    type: 'value'
+                }
+            ],
+            series: shownSeverities.map((sev) => createSeries(sev, points[sev]))
+        }
+
+        chart.setOption(option);
+    }
+
+    //Creates a fetch promise to get incident counts for a specific day
+    function createFetch(startDate, endDate) {
+        const query = encodeURIComponent(`a_created_ts is during '${startDate}' to '${endDate}'`);
+        const apiUrl = '/api/v2/pstreams/pstream/oia-alerts-stream/data'
+            + `?cfxql_query=${query}`
+            + '&group_by=a_severity'
+            + `&aggs=${encodeURIComponent("sum:count_")}`;
+        console.log(`Query: '${startDate}' to '${endDate}'`)
+        return fetch(apiUrl, {
+            method: "GET",
+            headers: {
+                "Content-type": "application/json; charset=UTF-8"
+            }
+        }).then(response => response.json())
+    }
+
+    //Starting from today, get the dates of the last 7 days
+    let dates = []
+    let d = new Date()
+    const months = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"]
+    for (let i = 0; i < 8; i++) {
+        dates.push(`${months[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`)
+        d.setDate(d.getDate() - 1)
+    }
+    dates.reverse()
+
+    let fetches = []
+    for (let i = 0; i < 7; i++) {
+        fetches.push(createFetch(dates[i], dates[i + 1]))
+    }
+
+    //Run fetches and populate chart with data
+    Promise.all(fetches).then(responses => {
+        let points = {}
+        for (let i = 0; i < responses.length; i++) {
+            let resp = responses[i]
+            for (let severityObj of resp["pstream_data"]) {
+                let severity = severityObj["a_severity"]
+                if (!(severity in points)) {
+                    points[severity] = []
+                }
+                points[severity].push(severityObj["count__sum"])
+            }
+        }
+        updateChart(points, dates)
+    })
+
+    window.addEventListener('resize', () => {
+        chart.resize();
+    });
+
+</script>
+</body>
+</html>
