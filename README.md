@@ -1,6 +1,6 @@
-# Fabrix.ai RDAF Micro Frontends Examples
+#  RDAF Micro Frontends Examples
 
-Fabrix.ai's **RDAF platform** provides a feature to create **micro frontends** (also known as custom widgets). This repository contains various examples demonstrating how to use this feature effectively.
+**RDAF platform** provides a feature to create **micro frontends** (also known as custom widgets). This repository contains various examples demonstrating how to use this feature effectively.
 
 ## 📂 Repository Structure
 
