@@ -25,6 +25,9 @@ Custom widgets enhance user interaction and display tailored data. These widgets
 - **JavaScript files**
 - **Other assets**
 
+⚠️ Important Note: Each custom widget must have one artifact named main, which typically contains an HTML attachment. This HTML file serves as the starting point of the widget and is essential for proper functionality.
+This HTML file serves as the starting point of the widget and is essential for proper functionality.
+
 Example definition:
 
 ```json
