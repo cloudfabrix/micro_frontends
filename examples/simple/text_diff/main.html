@@ -1,0 +1,70 @@
+{%- set text1 = engine.get_dashboard_attachment("dashboard_documentation", "text1", defaultValue="Hello World") -%}
+{%- set text2 = engine.get_dashboard_attachment("dashboard_documentation", "text2", defaultValue="Hi There") -%}
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>File Diff Viewer</title>
+    <script src="https://cdn.jsdelivr.net/npm/diff@5.1.0/dist/diff.min.js"></script>
+
+</head>
+<style>
+    .removed {
+      background-color: #ffe0e0;
+    }
+    
+    .added {
+      background-color: #e0ffe0;
+    }
+</style>
+<body>
+	<div id="diff-container"></div>
+<script>
+    function displaySideBySideDiff(oldText, newText, containerId) {
+      const diff = Diff.diffLines(oldText, newText);
+    
+      const leftColumn = document.createElement('div');
+      leftColumn.style.float = 'left';
+      leftColumn.style.width = '50%';
+      
+      const rightColumn = document.createElement('div');
+      rightColumn.style.float = 'left';
+      rightColumn.style.width = '50%';
+    
+      diff.forEach(part => {
+        const lines = part.value.split('\n').filter(line => line !== ''); //remove empty lines
+        lines.forEach(line => {
+            const lineElementLeft = document.createElement('div');
+            const lineElementRight = document.createElement('div');
+
+            if (part.added) {
+                lineElementRight.textContent = line;
+                lineElementRight.classList.add('added');
+                rightColumn.appendChild(lineElementRight);
+            } else if (part.removed) {
+                lineElementLeft.textContent = line;
+                lineElementLeft.classList.add('removed');
+                leftColumn.appendChild(lineElementLeft);
+            } else {
+                lineElementLeft.textContent = line;
+                lineElementRight.textContent = line;
+                leftColumn.appendChild(lineElementLeft);
+                rightColumn.appendChild(lineElementRight);
+            }
+        });
+      });
+    
+      const container = document.getElementById(containerId);
+      container.appendChild(leftColumn);
+      container.appendChild(rightColumn);
+    }
+    
+    // Example usage:
+    const oldText = `{{text1}}`;
+    const newText = `{{text2}}`;
+    displaySideBySideDiff(oldText, newText, 'diff-container');
+</script>
+</body>
+</html>

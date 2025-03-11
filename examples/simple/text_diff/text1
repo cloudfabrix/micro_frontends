@@ -1,0 +1,69 @@
+Wed Feb 26 15:40:09.973 UTC
+!! Building configuration...
+!! IOS XR Configuration 24.4.1
+!! Last configuration change at Wed Feb 26 15:34:08 2025 by cisco
+!
+hostname RCDN-NGMetro57C1-106
+username cisco
+ group root-lr
+ group cisco-support
+ secret 10 $6$f3wLS//zZLTt3S/.$OgCQKnZrkoMt/OeltqzmjpapFmF7XaGhDyIWMyppge2OTa8KPiYDhWwG3TPPt4OyPuOKn9C4BezfQQ/1UY3J20
+!
+line template vty
+ timestamp
+ exec-timeout 0 0
+!
+line console
+ exec-timeout 0 0
+ absolute-timeout 0
+ session-timeout 0
+!
+line default
+ exec-timeout 10 0
+ length 0
+ absolute-timeout 0
+ session-limit 10
+ session-timeout 100
+ transport input all
+!
+vty-pool default 0 50
+snmp-server ifindex persist
+snmp-server trap link ietf
+snmp-server vrf mgmt
+!
+snmp-server host 10.122.127.184 traps version 2c public
+snmp-server community public RO
+snmp-server traps snmp coldstart
+snmp-server traps snmp warmstart
+snmp-server chassis-id NCS-57C1-48Q6-SYS-FOC2728R0Q7
+snmp-server packetsize 4096
+snmp-server trap-source MgmtEth0/RP0/CPU0/0
+call-home
+ service active
+ contact smart-licensing
+ http-proxy 64.102.255.47 port 1080
+ source-interface MgmtEth0/RP0/CPU0/0
+ profile CiscoTAC-1
+  active
+  destination transport-method email disable
+  destination transport-method http
+ !
+!
+interface MgmtEth0/RP0/CPU0/0
+ ipv4 address 10.89.202.106 255.255.252.0
+!
+router static
+ address-family ipv4 unicast
+  0.0.0.0/0 10.89.202.1
+ !
+!
+license smart flexible-consumption enable
+ssh timeout 120
+ssh server rate-limit 600
+ssh server session-limit 110
+ssh server v2
+ssh server vrf default
+ssh server netconf vrf default
+crypto ca trustpoint SLA-TrustPoint
+!
+end

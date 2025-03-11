@@ -1,0 +1,200 @@
+Wed Feb 26 15:40:38.668 UTC
+!! Building configuration...
+!! IOS XR Configuration 24.4.1
+!! Last configuration change at Wed Feb 26 15:40:29 2025 by cisco
+!
+hostname RCDN-NGMetro57C1-106
+logging trap debugging
+logging events display-location
+logging format rfc5424
+logging console disable
+logging history notifications
+logging monitor informational
+logging buffered 125000000
+logging buffered debugging
+logging source-interface MgmtEth0/RP0/CPU0/0
+logging hostnameprefix RCDN-NGMetro571C1-106
+service timestamps log datetime localtime msec show-timezone year
+service timestamps debug datetime msec
+logging events link-status software-interfaces
+username cisco
+ group root-lr
+ group cisco-support
+ secret 10 $6$f3wLS//zZLTt3S/.$OgCQKnZrkoMt/OeltqzmjpapFmF7XaGhDyIWMyppge2OTa8KPiYDhWwG3TPPt4OyPuOKn9C4BezfQQ/1UY3J20
+!
+grpc
+ port 57400
+ no-tls
+ address-family ipv4
+!
+telemetry model-driven
+ destination-group DGroup1
+ !
+ sensor-group SGroup1
+  sensor-path Cisco-IOS-XR-infra-statsd-oper:infra-statistics/interfaces/interface/latest/generic-counters
+ !
+ subscription Sub1
+  sensor-group-id SGroup1 sample-interval 30000
+  destination-id DGroup1
+ !
+!
+line template vty
+ timestamp
+ exec-timeout 0 0
+!
+line console
+ exec-timeout 0 0
+ absolute-timeout 0
+ session-timeout 0
+!
+line default
+ exec-timeout 10 0
+ length 0
+ absolute-timeout 0
+ session-limit 10
+ session-timeout 100
+ transport input all
+!
+vty-pool default 0 50
+snmp-server ifindex persist
+snmp-server trap link ietf
+snmp-server vrf mgmt
+!
+snmp-server host 9.3.254.184 traps version 2c public97
+snmp-server host 10.122.127.184 traps version 2c public
+snmp-server community public RO
+snmp-server community public97 RO
+snmp-server traps rf
+snmp-server traps bfd
+snmp-server traps ethernet cfm
+snmp-server traps ntp
+snmp-server traps ethernet oam events
+snmp-server traps copy-complete
+snmp-server traps snmp linkup
+snmp-server traps snmp linkdown
+snmp-server traps snmp coldstart
+snmp-server traps snmp warmstart
+snmp-server traps snmp authentication
+snmp-server traps flash removal
+snmp-server traps flash insertion
+snmp-server traps power
+snmp-server traps config
+snmp-server traps entity
+snmp-server traps selective-vrf-download role-change
+snmp-server traps syslog
+snmp-server traps system
+snmp-server traps frequency synchronization
+snmp-server traps bridgemib
+snmp-server traps optical
+snmp-server traps addrpool low
+snmp-server traps addrpool high
+snmp-server traps cisco-entity-ext
+snmp-server traps entity-state operstatus
+snmp-server traps entity-state switchover
+snmp-server traps entity-redundancy all
+snmp-server traps entity-redundancy status
+snmp-server traps entity-redundancy switchover
+snmp-server chassis-id NCS-57C1-48Q6-SYS-FOC2728R0Q7
+snmp-server packetsize 4096
+snmp-server trap-source MgmtEth0/RP0/CPU0/0
+call-home
+ service active
+ contact smart-licensing
+ http-proxy 64.102.255.47 port 1080
+ source-interface MgmtEth0/RP0/CPU0/0
+ profile CiscoTAC-1
+  active
+  destination transport-method email disable
+  destination transport-method http
+ !
+!
+netconf-yang agent
+ ssh
+!
+interface MgmtEth0/RP0/CPU0/0
+ ipv4 address 10.89.202.106 255.255.252.0
+!
+router static
+ address-family ipv4 unicast
+  0.0.0.0/0 10.89.202.1
+ !
+!
+snmp-server traps isis all
+snmp-server traps ospfv3 errors bad-packet
+snmp-server traps ospfv3 errors config-error
+snmp-server traps ospfv3 errors virt-bad-packet
+snmp-server traps ospfv3 state-change if-state-change
+snmp-server traps ospfv3 state-change neighbor-state-change
+snmp-server traps ospfv3 state-change virtif-state-change
+snmp-server traps ospfv3 state-change virtneighbor-state-change
+snmp-server traps ospfv3 state-change restart-status-change
+snmp-server traps ospfv3 state-change restart-virtual-helper-status-change
+snmp-server traps bgp cbgp2
+snmp-server traps bgp
+snmp-server traps hsrp
+snmp-server traps vrrp events
+snmp-server traps vpls all
+snmp-server traps vpls status
+snmp-server traps vpls full-clear
+snmp-server traps vpls full-raise
+snmp-server traps l2vpn all
+snmp-server traps l2vpn vc-up
+snmp-server traps l2vpn vc-down
+snmp-server traps mpls traffic-eng up
+snmp-server traps mpls traffic-eng down
+snmp-server traps mpls traffic-eng reroute
+snmp-server traps mpls traffic-eng reoptimize
+snmp-server traps mpls frr all
+snmp-server traps mpls frr protected
+snmp-server traps mpls frr unprotected
+snmp-server traps mpls ldp up
+snmp-server traps mpls ldp down
+snmp-server traps mpls ldp threshold
+snmp-server traps mpls traffic-eng p2mp up
+snmp-server traps mpls traffic-eng p2mp down
+snmp-server traps rsvp all
+snmp-server traps rsvp new-flow
+snmp-server traps rsvp lost-flow
+snmp-server traps mpls l3vpn all
+snmp-server traps mpls l3vpn vrf-up
+snmp-server traps mpls l3vpn vrf-down
+snmp-server traps mpls l3vpn max-threshold-cleared
+snmp-server traps mpls l3vpn max-threshold-exceeded
+snmp-server traps mpls l3vpn mid-threshold-exceeded
+snmp-server traps mpls l3vpn max-threshold-reissue-notif-time 1
+snmp-server traps pim neighbor-change
+snmp-server traps pim invalid-message-received
+snmp-server traps pim rp-mapping-change
+snmp-server traps pim interface-state-change
+snmp-server traps msdp peer-state-change
+xml agent tty
+!
+snmp-server traps sensor
+snmp-server traps fru-ctrl
+netconf agent tty
+!
+snmp-server traps ospf lsa lsa-maxage
+snmp-server traps ospf lsa lsa-originate
+snmp-server traps ospf errors bad-packet
+snmp-server traps ospf errors authentication-failure
+snmp-server traps ospf errors config-error
+snmp-server traps ospf errors virt-bad-packet
+snmp-server traps ospf errors virt-authentication-failure
+snmp-server traps ospf errors virt-config-error
+snmp-server traps ospf retransmit packets
+snmp-server traps ospf retransmit virt-packets
+snmp-server traps ospf state-change if-state-change
+snmp-server traps ospf state-change neighbor-state-change
+snmp-server traps ospf state-change virtif-state-change
+snmp-server traps ospf state-change virtneighbor-state-change
+license smart flexible-consumption enable
+snmp-server traps ipsla
+ssh timeout 120
+ssh server rate-limit 600
+ssh server session-limit 110
+ssh server v2
+ssh server vrf default
+ssh server netconf vrf default
+crypto ca trustpoint SLA-TrustPoint
+!
+end
