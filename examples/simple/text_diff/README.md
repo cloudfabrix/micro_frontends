@@ -24,12 +24,6 @@ It is hardcoded in this example as a text2 attachment
                     "widget_implementation": "dashboard_documentation/dashboard_documentation_widget",
                     "min_width": 12,
                     "min_height": 12,
-                    "widget_id": "4e2d534c",
-                    "fixed_variables": {
-                        "help_yaml_source_dashboard": "dashboard_documentation",
-                        "help_yaml_source_attachment": "exampleHelp1.yml",
-                        "help_title": "Documentation",
-                        "help_default": "{ \"sections\": [ { \"title\": \"Documentation not found\" } ] }"
-                    }
+                    "widget_id": "4e2d534c"
                 }
 ```
