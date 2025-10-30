@@ -113,16 +113,11 @@ const TopologyGraph = () => {
           cssVariables.forEach(varName => {
             const value = parentStyles.getPropertyValue(varName);
             iframeRoot.style.setProperty(varName, value);
-            console.log("Set property", varName, value);
           });
 
-          
-          console.log(`Copied ${cssVariables.length} CSS variables from parent window`);
-          
+                    
           const bgColor1 = parentStyles.getPropertyValue('--v-theme-background');
           const isDarkMode = bgColor1 && bgColor1 != "255,255,255"
-          console.log("Background color", bgColor1);
-          console.log("Is dark mode", isDarkMode);
           setIsDarkTheme(isDarkMode);
           if (isDarkMode) {
             document.documentElement.removeAttribute('data-theme');
