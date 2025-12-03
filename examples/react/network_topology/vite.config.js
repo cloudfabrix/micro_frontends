@@ -44,6 +44,12 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
+      '/api/v2': {
+        target: 'https://10.95.125.190',
+        changeOrigin: true,
+        secure: false, // Allow self-signed certificates
+        rewrite: (path) => path
+      },
       '/api': {
         target: 'https://10.95.125.190',
         changeOrigin: true,
