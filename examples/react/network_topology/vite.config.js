@@ -1,6 +1,9 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
+// API Configuration
+const API_TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyLWlkIjoic2lyaS5rb3RoZUBjbG91ZGZhYnJpeC5jb20iLCJ3b3Jrc3BhY2VpZCI6ImFkYzVjN2MzLWVlNDQtNGU2Ni04MjIxLTg2MDYyMjU3OTZmZSIsInJkYWNfYXBpX2VuZHBvaW50IjoiaHR0cDovLzEwLjk1LjEyNS4xOTA6ODgwOCJ9.vptGeX0_jyh6IYW7hv2KnVSoWHiXvgYiKoNK5XoPvXY";
+
 // Plugin to inline CSS into JS
 const inlineCSSPlugin = () => {
   return {
@@ -41,6 +44,9 @@ const inlineCSSPlugin = () => {
 // See https://vitejs.dev/config/ for more details.
 export default defineConfig({
   plugins: [react(), inlineCSSPlugin()],
+  define: {
+    'import.meta.env.VITE_API_TOKEN': JSON.stringify(API_TOKEN)
+  },
   server: {
     port: 5173,
     proxy: {

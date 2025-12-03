@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import CytoscapeComponent from 'react-cytoscapejs';
 import axios from 'axios';
 import './custom_widget_platform_compatible_style.css';
-import { SearchPlusIcon, SearchMinusIcon, ExpandIcon, SyncAltIcon, UndoIcon, TimesIcon, ProjectDiagramIcon, FilterIcon, FilterCircleXmarkIcon, InfoCircleIcon } from './icons.jsx';
+import { SearchPlusIcon, SearchMinusIcon, ExpandIcon, SyncAltIcon, UndoIcon, TimesIcon, ProjectDiagramIcon, FilterIcon, FilterCircleXmarkIcon, InfoCircleIcon, BookmarkIcon, FloppyDiskIcon } from './icons.jsx';
 
 const getAqlBody = (aql, dbname) => {
   const params = {
@@ -89,6 +89,10 @@ const TopologyGraph = () => {
   const [nodeAlerts, setNodeAlerts] = useState([]); // Alerts for the selected node
   const [loadingAlerts, setLoadingAlerts] = useState(false); // Loading state for alerts
   const [showFilterHelp, setShowFilterHelp] = useState(false); // Show/hide filter help popup
+  const [savedViews, setSavedViews] = useState({}); // Saved filter views
+  const [showSaveViewDialog, setShowSaveViewDialog] = useState(false); // Show/hide save view dialog
+  const [newViewName, setNewViewName] = useState(''); // Name for new view
+  const [showViewsMenu, setShowViewsMenu] = useState(false); // Show/hide views dropdown
   
   // Link type filters
   const [linkTypeFilters, setLinkTypeFilters] = useState({
@@ -227,14 +231,14 @@ const TopologyGraph = () => {
       // Only include Bearer token in dev mode
       const headers = {};
       if (import.meta.env.DEV) {
-        headers.Authorization = "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyLWlkIjoic2lyaS5rb3RoZUBjbG91ZGZhYnJpeC5jb20iLCJ3b3Jrc3BhY2VpZCI6ImFkYzVjN2MzLWVlNDQtNGU2Ni04MjIxLTg2MDYyMjU3OTZmZSIsInJkYWNfYXBpX2VuZHBvaW50IjoiaHR0cDovLzEwLjk1LjEyNS4xOTA6ODgwOCJ9.vptGeX0_jyh6IYW7hv2KnVSoWHiXvgYiKoNK5XoPvXY";
+        headers.Authorization = `Bearer ${import.meta.env.VITE_API_TOKEN}`;
       }
 
       // Define AQL queries to retrieve nodes and edges from ArangoDB.
-      const nodeQuery = getAqlBody('FOR n IN routing_protocol_topology_nodes RETURN n', 'routing_protocol_topology');
-      const edgeQuery = getAqlBody('FOR e IN routing_protocol_topology_edges RETURN e', 'routing_protocol_topology');
-      // const nodeQuery = getAqlBody('FOR n IN cfx_rdaf_topology_new_nodes RETURN n', 'cfx_rdaf_topology_new');
-      // const edgeQuery = getAqlBody('FOR e IN cfx_rdaf_topology_new_edges RETURN e', 'cfx_rdaf_topology_new');
+      // const nodeQuery = getAqlBody('FOR n IN routing_protocol_topology_nodes RETURN n', 'routing_protocol_topology');
+      // const edgeQuery = getAqlBody('FOR e IN routing_protocol_topology_edges RETURN e', 'routing_protocol_topology');
+      const nodeQuery = getAqlBody('FOR n IN cfx_rdaf_topology_new_nodes RETURN n', 'cfx_rdaf_topology_new');
+      const edgeQuery = getAqlBody('FOR e IN cfx_rdaf_topology_new_edges RETURN e', 'cfx_rdaf_topology_new');
 
       try {
         // Fire off the node and edge queries concurrently.
@@ -359,7 +363,7 @@ const TopologyGraph = () => {
 
       const headers = {};
       if (import.meta.env.DEV) {
-        headers.Authorization = "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyLWlkIjoic2lyaUBmYWJyaXguYWkiLCJ3b3Jrc3BhY2VpZCI6ImZjYjY0YWIwLTY3MTYtNDgxYi1iZTUxLWRiNjY4NThhY2M0NyJ9.kiuQ67x7d6hF3N0rxOzqMWCLpdjpS7T8EtYUNCDLR1E";
+        headers.Authorization = `Bearer ${import.meta.env.VITE_API_TOKEN}`;
       }
 
       const response = await axios.get(`${baseUrl}?${params.toString()}`, { headers });
@@ -372,6 +376,165 @@ const TopologyGraph = () => {
       setNodeAlerts([]);
     } finally {
       setLoadingAlerts(false);
+    }
+  };
+
+  // Load saved views on mount
+  useEffect(() => {
+    async function loadSavedViews() {
+      try {
+        const headers = {};
+        if (import.meta.env.DEV) {
+          headers.Authorization = `Bearer ${import.meta.env.VITE_API_TOKEN}`;
+        }
+        
+        const response = await axios.post('/api/portal/userpref/get/network_topology_views', {
+          reportId: 'network_topology_views'
+        }, { headers });
+        
+        const views = response.data?.preferences || {};
+        setSavedViews(views);
+        console.log('Loaded saved views:', Object.keys(views).length);
+      } catch (error) {
+        console.error('Failed to load saved views:', error);
+        setSavedViews({});
+      }
+    }
+    loadSavedViews();
+  }, []);
+
+  // Save current filter state as a view
+  const saveView = async (viewName) => {
+    if (!viewName || !viewName.trim()) {
+      alert('Please enter a view name');
+      return;
+    }
+
+    const viewData = {
+      selectedDevices,
+      searchTerm,
+      searchField,
+      selectedDevicemodels,
+      linkTypeFilters,
+      showUnmanagedDevices,
+      savedTime: new Date().toISOString()
+    };
+
+    try {
+      const headers = {};
+      if (import.meta.env.DEV) {
+        headers.Authorization = `Bearer ${import.meta.env.VITE_API_TOKEN}`;
+      }
+      
+      // Save view metadata to views list
+      const updatedViews = {
+        ...savedViews,
+        [viewName]: {
+          saved_time: viewData.savedTime,
+          filter_count: selectedDevices.length + (searchTerm ? 1 : 0) + selectedDevicemodels.length
+        }
+      };
+
+      await axios.post('/api/portal/userpref/submit/network_topology_views', {
+        submitType: 'SUBMIT',
+        reportId: 'network_topology_views',
+        version: '1.0.1',
+        params: {
+          preferences: updatedViews
+        }
+      }, { headers });
+
+      // Save actual view data
+      await axios.post(`/api/portal/userpref/submit/network_topology_view_data_${viewName}`, {
+        submitType: 'SUBMIT',
+        reportId: `network_topology_view_data_${viewName}`,
+        version: '1.0.1',
+        params: {
+          preferences: viewData
+        }
+      }, { headers });
+
+      setSavedViews(updatedViews);
+      setShowSaveViewDialog(false);
+      setNewViewName('');
+      alert(`View "${viewName}" saved successfully!`);
+    } catch (error) {
+      console.error('Failed to save view:', error);
+      alert('Failed to save view. Please try again.');
+    }
+  };
+
+  // Load a saved view
+  const loadView = async (viewName) => {
+    try {
+      const headers = {};
+      if (import.meta.env.DEV) {
+        headers.Authorization = `Bearer ${import.meta.env.VITE_API_TOKEN}`;
+      }
+      
+      const response = await axios.post(`/api/portal/userpref/get/network_topology_view_data_${viewName}`, {
+        reportId: `network_topology_view_data_${viewName}`
+      }, { headers });
+      
+      const viewData = response.data?.preferences;
+      
+      if (!viewData) {
+        alert('View not found');
+        return;
+      }
+
+      // Apply the saved filters
+      setSelectedDevices(viewData.selectedDevices || []);
+      setSearchTerm(viewData.searchTerm || '');
+      setSearchField(viewData.searchField || 'label');
+      setSelectedDevicemodels(viewData.selectedDevicemodels || []);
+      setLinkTypeFilters(viewData.linkTypeFilters || {});
+      setShowUnmanagedDevices(viewData.showUnmanagedDevices !== undefined ? viewData.showUnmanagedDevices : true);
+      setPendingFilterDevices([]);
+      
+      setShowViewsMenu(false);
+      console.log(`Loaded view: ${viewName}`);
+    } catch (error) {
+      console.error('Failed to load view:', error);
+      alert('Failed to load view. Please try again.');
+    }
+  };
+
+  // Delete a saved view
+  const deleteView = async (viewName) => {
+    if (!confirm(`Are you sure you want to delete the view "${viewName}"?`)) {
+      return;
+    }
+
+    try {
+      const headers = {};
+      if (import.meta.env.DEV) {
+        headers.Authorization = `Bearer ${import.meta.env.VITE_API_TOKEN}`;
+      }
+      
+      const updatedViews = { ...savedViews };
+      delete updatedViews[viewName];
+
+      // Delete the actual view data first
+      await axios.post(`/api/portal/userpref/reset/network_topology_view_data_${viewName}`, {
+        reportId: `network_topology_view_data_${viewName}`
+      }, { headers });
+
+      // Delete view from views list
+      await axios.post('/api/portal/userpref/submit/network_topology_views', {
+        submitType: 'SUBMIT',
+        reportId: 'network_topology_views',
+        version: '1.0.1',
+        params: {
+          preferences: updatedViews
+        }
+      }, { headers });
+
+      setSavedViews(updatedViews);
+      console.log(`Deleted view: ${viewName} (both metadata and data)`);
+    } catch (error) {
+      console.error('Failed to delete view:', error);
+      alert('Failed to delete view. Please try again.');
     }
   };
 
@@ -402,7 +565,7 @@ const TopologyGraph = () => {
 
         const headers = {};
         if (import.meta.env.DEV) {
-          headers.Authorization = "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyLWlkIjoic2lyaUBmYWJyaXguYWkiLCJ3b3Jrc3BhY2VpZCI6ImZjYjY0YWIwLTY3MTYtNDgxYi1iZTUxLWRiNjY4NThhY2M0NyJ9.kiuQ67x7d6hF3N0rxOzqMWCLpdjpS7T8EtYUNCDLR1E";
+          headers.Authorization = `Bearer ${import.meta.env.VITE_API_TOKEN}`;
         }
 
         const response = await axios.get(`${baseUrl}?${params.toString()}`, { headers });
@@ -729,6 +892,17 @@ const TopologyGraph = () => {
     if (!cy) return;
     cy.style(stylesheet);
   }, [cy, isDarkTheme, labelDisplayMode]);
+
+  // Close views menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (showViewsMenu && !e.target.closest('.views-menu-container')) {
+        setShowViewsMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showViewsMenu]);
 
 //   const elements = [
 //     { data: { id: 'one', label: 'Node 1' } },
@@ -1346,6 +1520,156 @@ const TopologyGraph = () => {
               >
                 <InfoCircleIcon />
               </button>
+              {/* Save and Load Views buttons - temporarily disabled
+              <button
+                onClick={() => setShowSaveViewDialog(true)}
+                className="action-btn"
+                title="Save current filters as a view"
+                style={{
+                  width: '44px',
+                  height: '44px',
+                  padding: '0',
+                  background: 'var(--success)',
+                  color: 'var(--text)',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  fontSize: '12px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)'
+                }}
+                onMouseEnter={(e) => e.target.style.background = 'var(--success-hover)'}
+                onMouseLeave={(e) => e.target.style.background = 'var(--success)'}
+              >
+                <FloppyDiskIcon />
+              </button>
+              <div className="views-menu-container" style={{ position: 'relative' }}>
+                <button
+                  onClick={() => setShowViewsMenu(!showViewsMenu)}
+                  className="action-btn"
+                  title="Load saved views"
+                  style={{
+                    width: '44px',
+                    height: '44px',
+                    padding: '0',
+                    background: 'var(--primary)',
+                    color: 'var(--text)',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    fontSize: '12px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+                    position: 'relative'
+                  }}
+                  onMouseEnter={(e) => e.target.style.background = 'var(--accent-hover)'}
+                  onMouseLeave={(e) => e.target.style.background = 'var(--primary)'}
+                >
+                  <BookmarkIcon />
+                  {Object.keys(savedViews).length > 0 && (
+                    <span style={{
+                      position: 'absolute',
+                      top: '-4px',
+                      right: '-4px',
+                      background: 'var(--error)',
+                      color: 'white',
+                      borderRadius: '10px',
+                      padding: '2px 6px',
+                      fontSize: '10px',
+                      fontWeight: 'bold',
+                      minWidth: '16px',
+                      textAlign: 'center'
+                    }}>
+                      {Object.keys(savedViews).length}
+                    </span>
+                  )}
+                </button>
+                {showViewsMenu && (
+                  <div style={{
+                    position: 'absolute',
+                    top: '50px',
+                    right: '0',
+                    background: 'var(--card)',
+                    border: '1px solid var(--border)',
+                    borderRadius: '8px',
+                    boxShadow: 'var(--elevation-8)',
+                    zIndex: 1002,
+                    minWidth: '250px',
+                    maxHeight: '300px',
+                    overflowY: 'auto'
+                  }}>
+                    <div style={{
+                      padding: '10px',
+                      borderBottom: '1px solid var(--border)',
+                      fontWeight: '600',
+                      fontSize: '12px',
+                      color: 'var(--text)',
+                      background: 'var(--cfx3rdlevel)'
+                    }}>
+                      Saved Views ({Object.keys(savedViews).length})
+                    </div>
+                    {Object.keys(savedViews).length === 0 ? (
+                      <div style={{
+                        padding: '20px',
+                        textAlign: 'center',
+                        color: 'var(--text-muted)',
+                        fontSize: '12px'
+                      }}>
+                        No saved views yet
+                      </div>
+                    ) : (
+                      Object.entries(savedViews).map(([viewName, viewMeta]) => (
+                        <div
+                          key={viewName}
+                          style={{
+                            padding: '10px',
+                            borderBottom: '1px solid var(--border)',
+                            fontSize: '12px',
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            transition: 'background 0.2s'
+                          }}
+                          onMouseEnter={(e) => e.currentTarget.style.background = 'var(--cfx3rdlevel)'}
+                          onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                        >
+                          <div style={{ flex: 1, cursor: 'pointer' }} onClick={() => loadView(viewName)}>
+                            <div style={{ fontWeight: '600', color: 'var(--primary)', marginBottom: '4px' }}>
+                              {viewName}
+                            </div>
+                            <div style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>
+                              {viewMeta.filter_count || 0} filter{(viewMeta.filter_count || 0) !== 1 ? 's' : ''}
+                              {viewMeta.saved_time && ` • ${new Date(viewMeta.saved_time).toLocaleDateString()}`}
+                            </div>
+                          </div>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              deleteView(viewName);
+                            }}
+                            style={{
+                              background: 'none',
+                              border: 'none',
+                              color: 'var(--error)',
+                              cursor: 'pointer',
+                              padding: '4px 8px',
+                              fontSize: '16px'
+                            }}
+                            title="Delete view"
+                          >
+                            <TimesIcon />
+                          </button>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                )}
+              </div>
+              */}
             </div>
           </div>
           
@@ -2309,6 +2633,146 @@ const TopologyGraph = () => {
           Close
         </button>
       </div>
+    )}
+    
+    {/* Save View Dialog */}
+    {showSaveViewDialog && (
+      <>
+        {/* Backdrop */}
+        <div
+          onClick={() => setShowSaveViewDialog(false)}
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            width: '100vw',
+            height: '100vh',
+            background: 'rgba(0, 0, 0, 0.5)',
+            zIndex: 2000,
+            backdropFilter: 'blur(2px)'
+          }}
+        />
+        
+        {/* Dialog */}
+        <div
+          style={{
+            position: 'fixed',
+            top: '50%',
+            left: '50%',
+            transform: 'translate(-50%, -50%)',
+            background: 'var(--card)',
+            border: '1px solid var(--border)',
+            borderRadius: '8px',
+            boxShadow: 'var(--elevation-24)',
+            zIndex: 2001,
+            width: '90vw',
+            maxWidth: '400px',
+            padding: '20px'
+          }}
+        >
+          {/* Header */}
+          <div style={{
+            fontSize: '16px',
+            fontWeight: '600',
+            marginBottom: '15px',
+            color: 'var(--text)',
+            borderBottom: '2px solid var(--primary)',
+            paddingBottom: '8px'
+          }}>
+            Save Current View
+          </div>
+          
+          {/* Content */}
+          <div style={{ marginBottom: '15px' }}>
+            <label style={{
+              display: 'block',
+              fontSize: '12px',
+              fontWeight: '600',
+              marginBottom: '8px',
+              color: 'var(--text)'
+            }}>
+              View Name
+            </label>
+            <input
+              type="text"
+              value={newViewName}
+              onChange={(e) => setNewViewName(e.target.value)}
+              onKeyPress={(e) => {
+                if (e.key === 'Enter') {
+                  saveView(newViewName);
+                }
+              }}
+              placeholder="Enter a name for this view..."
+              autoFocus
+              style={{
+                width: '100%',
+                padding: '10px',
+                fontSize: '13px',
+                border: '1px solid var(--border)',
+                borderRadius: '4px',
+                background: 'var(--bg)',
+                color: 'var(--text)',
+                outline: 'none'
+              }}
+            />
+            <div style={{
+              fontSize: '11px',
+              color: 'var(--text-secondary)',
+              marginTop: '8px',
+              lineHeight: '1.4'
+            }}>
+              This will save: selected devices, search term, device models, link type filters, and unmanaged device visibility.
+            </div>
+          </div>
+          
+          {/* Buttons */}
+          <div style={{ display: 'flex', gap: '10px' }}>
+            <button
+              onClick={() => {
+                setShowSaveViewDialog(false);
+                setNewViewName('');
+              }}
+              className="action-btn"
+              style={{
+                flex: 1,
+                padding: '10px',
+                background: 'var(--cfx3rdlevel)',
+                color: 'var(--text)',
+                border: '1px solid var(--border)',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                fontSize: '13px',
+                fontWeight: '500',
+                transition: 'all 0.2s'
+              }}
+              onMouseEnter={(e) => e.target.style.background = 'var(--cfx2ndlevel)'}
+              onMouseLeave={(e) => e.target.style.background = 'var(--cfx3rdlevel)'}
+            >
+              Cancel
+            </button>
+            <button
+              onClick={() => saveView(newViewName)}
+              className="action-btn"
+              style={{
+                flex: 1,
+                padding: '10px',
+                background: 'var(--success)',
+                color: 'var(--text)',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                fontSize: '13px',
+                fontWeight: '500',
+                transition: 'all 0.2s'
+              }}
+              onMouseEnter={(e) => e.target.style.background = 'var(--success-hover)'}
+              onMouseLeave={(e) => e.target.style.background = 'var(--success)'}
+            >
+              Save View
+            </button>
+          </div>
+        </div>
+      </>
     )}
     
     {/* Filter Help Popup */}
