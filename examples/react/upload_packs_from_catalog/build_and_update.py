@@ -8,10 +8,29 @@ import glob
 import os
 import sys
 
+def clean_dist():
+    """Clean the dist directory before building"""
+    dist_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'dist')
+    if os.path.exists(dist_dir):
+        import shutil
+        print("Cleaning dist directory...")
+        for file in os.listdir(dist_dir):
+            file_path = os.path.join(dist_dir, file)
+            try:
+                if os.path.isfile(file_path):
+                    os.remove(file_path)
+                elif os.path.isdir(file_path):
+                    shutil.rmtree(file_path)
+            except Exception as e:
+                print(f"Warning: Could not remove {file_path}: {e}")
+
 def run_build():
     """Run npm build command"""
     print("Building the package...")
     try:
+        # Clean dist directory first to ensure fresh build
+        clean_dist()
+        
         result = subprocess.run(
             ['npm', 'run', 'build'],
             cwd=os.path.dirname(os.path.abspath(__file__)),
@@ -38,15 +57,28 @@ def find_js_file():
         raise FileNotFoundError("No index-*.js file found in dist directory")
     if len(js_files) > 1:
         print(f"Warning: Multiple JS files found, using: {js_files[0]}")
-    return js_files[0]
+    
+    # Get the most recently modified file (in case there are multiple)
+    js_files_with_time = [(f, os.path.getmtime(f)) for f in js_files]
+    js_files_with_time.sort(key=lambda x: x[1], reverse=True)
+    latest_file = js_files_with_time[0][0]
+    
+    # Show file info
+    file_size = os.path.getsize(latest_file)
+    file_time = os.path.getmtime(latest_file)
+    from datetime import datetime
+    print(f"Using JS file: {latest_file}")
+    print(f"  Size: {file_size:,} bytes")
+    print(f"  Modified: {datetime.fromtimestamp(file_time).strftime('%Y-%m-%d %H:%M:%S')}")
+    
+    return latest_file
 
 def update_dashboard():
     """Update dashboard.json with built files"""
     print("\nUpdating dashboard.json...")
     
-    # Find the JS file
+    # Find the JS file (most recent one)
     js_file_path = find_js_file()
-    print(f"Found JS file: {js_file_path}")
     
     # Read the HTML file
     html_path = 'dist/index.html'
@@ -107,10 +139,24 @@ def update_dashboard():
     with open(dashboard_path, 'w', encoding='utf-8') as f:
         json.dump(dashboard, f, indent=4, ensure_ascii=False)
     
+    # Verify the update
+    with open(dashboard_path, 'r', encoding='utf-8') as f:
+        updated_dashboard = json.load(f)
+    updated_attachments = updated_dashboard.get('attachments', [])
+    updated_js = [a for a in updated_attachments if a.get('name') == 'main.js']
+    updated_js_size = len(updated_js[0]['value']) if updated_js else 0
+    
     print(f"\nSuccessfully updated dashboard.json!")
     print(f"  - HTML content: {len(html_content):,} characters")
     print(f"  - JS content: {len(js_content):,} characters")
+    print(f"  - JS in dashboard.json: {updated_js_size:,} characters")
     print(f"  - Total attachments: {len(attachments)}")
+    
+    # Verify sizes match
+    if updated_js_size != len(js_content):
+        print(f"  ⚠ Warning: JS content size mismatch! Expected {len(js_content)}, got {updated_js_size}")
+    else:
+        print(f"  ✓ Verification: JS content size matches")
 
 def main():
     """Main execution function"""

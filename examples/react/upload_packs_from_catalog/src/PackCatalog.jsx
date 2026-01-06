@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
     getPackKey,
     fetchInstalledServices,
@@ -9,6 +9,7 @@ import {
 const ITEMS_PER_PAGE = 10;
 
 function PackCatalog() {
+    const [uploadMode, setUploadMode] = useState('catalog'); // 'catalog' or 'local'
     const [packsData, setPacksData] = useState([]);
     const [filteredPacks, setFilteredPacks] = useState([]);
     const [selectedPacks, setSelectedPacks] = useState(new Set());
@@ -19,7 +20,11 @@ function PackCatalog() {
     const [uploading, setUploading] = useState(false);
     const [uploadStatus, setUploadStatus] = useState(null);
     const [showStatus, setShowStatus] = useState(false);
+    const [uploadProgress, setUploadProgress] = useState('');
     const [isDarkTheme, setIsDarkTheme] = useState(window.matchMedia('(prefers-color-scheme: dark)').matches);
+    const [selectedFile, setSelectedFile] = useState(null);
+    const [dragActive, setDragActive] = useState(false);
+    const fileInputRef = useRef(null);
 
     // Apply theme from parent window (if in iframe) or system theme
     useEffect(() => {
@@ -44,6 +49,8 @@ function PackCatalog() {
                         const value = parentStyles.getPropertyValue(varName);
                         iframeRoot.style.setProperty(varName, value);
                     });
+
+                    console.log(`Copied ${cssVariables.length} CSS variables from parent`);
 
                     const bgColor1 = parentStyles.getPropertyValue('--v-theme-background');
                     const isDarkMode = bgColor1 && bgColor1 != "255,255,255"
@@ -199,6 +206,7 @@ function PackCatalog() {
         setSelectedPacks(new Set());
         setShowStatus(false);
         setUploadStatus(null);
+        setUploadProgress('');
     }
 
     function formatDependencies(deps) {
@@ -217,102 +225,67 @@ function PackCatalog() {
         );
     }
 
-    async function uploadSelected() {
-        const selected = packsData.filter(p => selectedPacks.has(getPackKey(p)));
+    // Shared upload function for a single file
+    async function uploadFile(file, packName = null, packVersion = null) {
+        const formData = new FormData();
+        const fileName = packName ? `${packName}_${packVersion}.tar.gz` : file.name;
+        formData.append('file', file, fileName);
 
-        if (selected.length === 0) {
-            alert('No packs selected');
-            return;
+        // Upload the file
+        const uploadResponse = await fetch('/api/v2/packs/upload', {
+            method: 'POST',
+            headers: {
+                'accept': 'application/json'
+            },
+            body: formData
+        });
+
+        // Parse the response - try JSON first, fallback to text
+        let result;
+        try {
+            result = await uploadResponse.json();
+        } catch (err) {
+            const errorText = await uploadResponse.text().catch(() => '');
+            if (!uploadResponse.ok) {
+                throw new Error(`HTTP ${uploadResponse.status}: ${errorText || 'Unknown error'}`);
+            }
+            throw new Error(`Failed to parse response: ${errorText || err.message}`);
         }
 
-        setUploading(true);
-        setShowStatus(true);
-
-        const results = {
-            success: [],
-            failed: []
-        };
-
-        // Upload each pack individually
-        for (let i = 0; i < selected.length; i++) {
-            const pack = selected[i];
-            const packName = pack.pack_name || 'Unknown';
-            const packVersion = pack.pack_version || 'Unknown';
-            const tarFileUrl = pack.tar_file_url;
-
-            if (!tarFileUrl) {
-                results.failed.push({ pack: packName, version: packVersion, error: 'Missing tar_file_url' });
-                continue;
-            }
-
-            try {
-                // Fetch the tar file from the URL
-                const tarResponse = await fetch(tarFileUrl);
-                if (!tarResponse.ok) {
-                    throw new Error(`Failed to fetch tar file: HTTP ${tarResponse.status}`);
-                }
-
-                // Convert response to blob
-                const tarBlob = await tarResponse.blob();
-
-                // Create FormData for multipart/form-data upload
-                const formData = new FormData();
-                const fileName = tarFileUrl.split('/').pop() || `${packName}_${packVersion}.tar.gz`;
-                formData.append('file', tarBlob, fileName);
-
-                // Upload the file
-                const uploadResponse = await fetch('/api/v2/packs/upload', {
-                    method: 'POST',
-                    headers: {
-                        'accept': 'application/json'
-                    },
-                    body: formData
-                });
-
-                // Parse the response - try JSON first, fallback to text
-                let result;
-                try {
-                    result = await uploadResponse.json();
-                } catch (err) {
-                    const errorText = await uploadResponse.text().catch(() => '');
-                    if (!uploadResponse.ok) {
-                        throw new Error(`HTTP ${uploadResponse.status}: ${errorText || 'Unknown error'}`);
-                    }
-                    throw new Error(`Failed to parse response: ${errorText || err.message}`);
-                }
-
-                // Check for error response with "detail" field (common error format)
-                if (result.detail) {
-                    throw new Error(result.detail);
-                }
-
-                // Check the API response structure for success response
-                const serviceError = result.serviceError;
-                const serviceResult = result.serviceResult || {};
-                const status = serviceResult.status;
-                const statusMessage = serviceResult.statusMessage || 'Unknown status';
-
-                // Check if there's a service error or if status is not SUBMIT_OK
-                if (serviceError && serviceError !== 'none') {
-                    throw new Error(`Service error: ${serviceError}${statusMessage ? ` - ${statusMessage}` : ''}`);
-                }
-
-                if (status === 'SUBMIT_OK') {
-                    results.success.push({
-                        pack: packName,
-                        version: packVersion,
-                        message: statusMessage
-                    });
-                } else {
-                    throw new Error(`Upload failed: ${statusMessage || status || 'Unknown error'}`);
-                }
-            } catch (err) {
-                results.failed.push({ pack: packName, version: packVersion, error: err.message });
-            }
+        // Check for error response with "detail" field (common error format)
+        if (result.detail) {
+            throw new Error(result.detail);
         }
 
+        // Check the API response structure for success response
+        const serviceError = result.serviceError;
+        const serviceResult = result.serviceResult || {};
+        const status = serviceResult.status;
+        const statusMessage = serviceResult.statusMessage || 'Unknown status';
+
+        // Check if there's a service error or if status is not SUBMIT_OK
+        if (serviceError && serviceError !== 'none') {
+            throw new Error(`Service error: ${serviceError}${statusMessage ? ` - ${statusMessage}` : ''}`);
+        }
+
+        if (status === 'SUBMIT_OK') {
+            return {
+                success: true,
+                pack: packName || file.name.replace('.tar.gz', '').replace('.tgz', ''),
+                version: packVersion || 'Unknown',
+                message: statusMessage
+            };
+        } else {
+            throw new Error(`Upload failed: ${statusMessage || status || 'Unknown error'}`);
+        }
+    }
+
+    // Display upload results
+    function displayUploadResults(results) {
         setUploading(false);
+        setUploadProgress('');
         setUploadStatus(results);
+        setShowStatus(true);
 
         // Show results in popup as well
         let message = `Upload completed:\n`;
@@ -333,15 +306,150 @@ function PackCatalog() {
         if (results.failed.length > 0) {
             message += `\n\nFailed packs:\n`;
             results.failed.forEach(f => {
-                message += `- ${f.pack} (${f.version}): ${f.error}\n`;
+                message += `- ${f.pack} (${f.version})`;
+                if (f.error) {
+                    message += `: ${f.error}`;
+                }
+                message += `\n`;
             });
         }
 
         alert(message);
+    }
 
-        // Clear selection after successful upload
-        if (results.failed.length === 0 && results.success.length > 0) {
-            clearSelection();
+    async function uploadSelected() {
+        const selected = packsData.filter(p => selectedPacks.has(getPackKey(p)));
+
+        if (selected.length === 0) {
+            alert('No packs selected');
+            return;
+        }
+
+        setUploading(true);
+        setShowStatus(true);
+        setUploadProgress('Starting upload...');
+
+        const results = {
+            success: [],
+            failed: []
+        };
+
+        // Upload each pack individually
+        for (let i = 0; i < selected.length; i++) {
+            const pack = selected[i];
+            const packName = pack.pack_name || 'Unknown';
+            const packVersion = pack.pack_version || 'Unknown';
+            const tarFileUrl = pack.tar_file_url;
+
+            if (!tarFileUrl) {
+                results.failed.push({ pack: packName, version: packVersion, error: 'Missing tar_file_url' });
+                setUploadProgress(`Uploading ${i + 1}/${selected.length}: ${packName}... (skipped - missing URL)`);
+                continue;
+            }
+
+            try {
+                setUploadProgress(`Uploading ${i + 1}/${selected.length}: ${packName}...`);
+                
+                // Fetch the tar file from the URL
+                const tarResponse = await fetch(tarFileUrl);
+                if (!tarResponse.ok) {
+                    throw new Error(`Failed to fetch tar file: HTTP ${tarResponse.status}`);
+                }
+
+                // Convert response to blob
+                const tarBlob = await tarResponse.blob();
+
+                // Upload using shared function
+                const uploadResult = await uploadFile(tarBlob, packName, packVersion);
+                results.success.push(uploadResult);
+            } catch (err) {
+                results.failed.push({ pack: packName, version: packVersion, error: err.message });
+            }
+        }
+
+        displayUploadResults(results);
+
+        // Clear selection after upload completes
+        setSelectedPacks(new Set());
+        setUploadProgress('');
+    }
+
+    async function uploadLocalFile() {
+        if (!selectedFile) {
+            alert('Please select a file to upload');
+            return;
+        }
+
+        // Validate file type
+        if (!selectedFile.name.endsWith('.tar.gz') && !selectedFile.name.endsWith('.tgz')) {
+            alert('Please select a .tar.gz or .tgz file');
+            return;
+        }
+
+        setUploading(true);
+        setShowStatus(true);
+        setUploadProgress('Uploading file...');
+
+        const results = {
+            success: [],
+            failed: []
+        };
+
+        try {
+            const uploadResult = await uploadFile(selectedFile);
+            results.success.push(uploadResult);
+        } catch (err) {
+            const fileName = selectedFile.name.replace('.tar.gz', '').replace('.tgz', '');
+            results.failed.push({ 
+                pack: fileName, 
+                version: 'Unknown', 
+                error: err.message 
+            });
+        }
+
+        displayUploadResults(results);
+        setSelectedFile(null);
+        setUploadProgress('');
+    }
+
+    function handleFileSelect(e) {
+        const file = e.target.files?.[0];
+        if (file) {
+            // Validate file type
+            if (!file.name.endsWith('.tar.gz') && !file.name.endsWith('.tgz')) {
+                alert('Please select a .tar.gz or .tgz file');
+                // Reset the input
+                if (e.target) {
+                    e.target.value = '';
+                }
+                return;
+            }
+            setSelectedFile(file);
+        }
+    }
+
+    function handleDrag(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (e.type === 'dragenter' || e.type === 'dragover') {
+            setDragActive(true);
+        } else if (e.type === 'dragleave') {
+            setDragActive(false);
+        }
+    }
+
+    function handleDrop(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        setDragActive(false);
+
+        const file = e.dataTransfer.files?.[0];
+        if (file) {
+            if (file.name.endsWith('.tar.gz') || file.name.endsWith('.tgz')) {
+                setSelectedFile(file);
+            } else {
+                alert('Please select a .tar.gz or .tgz file');
+            }
         }
     }
 
@@ -359,23 +467,59 @@ function PackCatalog() {
 
     return (
         <div className="container">
-            <h1>RDA Pack Catalog</h1>
+            <h1>RDA Pack Upload</h1>
 
-            <div className="toolbar">
-                <div className="search-box">
+            {/* Upload Mode Selection */}
+            <div className="upload-mode-selector">
+                <label className="mode-option">
                     <input
-                        type="text"
-                        placeholder="Search packs..."
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
+                        type="radio"
+                        name="uploadMode"
+                        value="catalog"
+                        checked={uploadMode === 'catalog'}
+                        onChange={(e) => {
+                            setUploadMode(e.target.value);
+                            setSelectedFile(null);
+                            setUploadStatus(null);
+                            setShowStatus(false);
+                        }}
                     />
-                </div>
-                <div className="selection-info">
-                    <strong>{selectedPacks.size}</strong> pack{selectedPacks.size !== 1 ? 's' : ''} selected
-                </div>
+                    <span>Upload packs from catalog</span>
+                </label>
+                <label className="mode-option">
+                    <input
+                        type="radio"
+                        name="uploadMode"
+                        value="local"
+                        checked={uploadMode === 'local'}
+                        onChange={(e) => {
+                            setUploadMode(e.target.value);
+                            setSelectedPacks(new Set());
+                            setUploadStatus(null);
+                            setShowStatus(false);
+                        }}
+                    />
+                    <span>Upload pack from local</span>
+                </label>
             </div>
 
-            <div className="table-wrapper">
+            {uploadMode === 'catalog' ? (
+                <>
+                    <div className="toolbar">
+                        <div className="search-box">
+                            <input
+                                type="text"
+                                placeholder="Search packs..."
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                            />
+                        </div>
+                        <div className="selection-info">
+                            <strong>{selectedPacks.size}</strong> pack{selectedPacks.size !== 1 ? 's' : ''} selected
+                        </div>
+                    </div>
+
+                    <div className="table-wrapper">
                 <table>
                     <thead>
                         <tr>
@@ -454,35 +598,127 @@ function PackCatalog() {
                 </table>
             </div>
 
-            {filteredPacks.length > ITEMS_PER_PAGE && (
-                <div className="pagination">
-                    <div className="pagination-info">
-                        Showing {startIndex + 1}-{Math.min(endIndex, filteredPacks.length)} of {filteredPacks.length} packs
-                    </div>
-                    <div className="pagination-controls">
-                        <button
-                            className="pagination-btn"
-                            onClick={previousPage}
-                            disabled={currentPage === 1}
-                        >
-                            Previous
+                    {filteredPacks.length > ITEMS_PER_PAGE && (
+                        <div className="pagination">
+                            <div className="pagination-info">
+                                Showing {startIndex + 1}-{Math.min(endIndex, filteredPacks.length)} of {filteredPacks.length} packs
+                            </div>
+                            <div className="pagination-controls">
+                                <button
+                                    className="pagination-btn"
+                                    onClick={previousPage}
+                                    disabled={currentPage === 1}
+                                >
+                                    Previous
+                                </button>
+                                <span className="pagination-page-info">
+                                    Page {currentPage} of {totalPages}
+                                </span>
+                                <button
+                                    className="pagination-btn"
+                                    onClick={nextPage}
+                                    disabled={currentPage === totalPages}
+                                >
+                                    Next
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
+                    <div className="actions">
+                        <button className="btn btn-secondary" onClick={clearSelection}>
+                            Clear Selection
                         </button>
-                        <span className="pagination-page-info">
-                            Page {currentPage} of {totalPages}
-                        </span>
                         <button
-                            className="pagination-btn"
-                            onClick={nextPage}
-                            disabled={currentPage === totalPages}
+                            className="btn btn-primary"
+                            disabled={selectedPacks.size === 0 || uploading}
+                            onClick={uploadSelected}
                         >
-                            Next
+                            {uploading ? (uploadProgress || 'Uploading...') : 'Upload Selected'}
                         </button>
                     </div>
-                </div>
+                </>
+            ) : (
+                <>
+                    <div className="file-upload-area">
+                        <div
+                            className={`drop-zone ${dragActive ? 'drag-active' : ''} ${selectedFile ? 'file-selected' : ''}`}
+                            onDragEnter={handleDrag}
+                            onDragLeave={handleDrag}
+                            onDragOver={handleDrag}
+                            onDrop={handleDrop}
+                        >
+                            {selectedFile ? (
+                                <div className="file-info">
+                                    <div className="file-icon">📦</div>
+                                    <div className="file-name">{selectedFile.name}</div>
+                                    <div className="file-size">
+                                        {(selectedFile.size / 1024 / 1024).toFixed(2)} MB
+                                    </div>
+                                    <button
+                                        type="button"
+                                        className="btn btn-secondary btn-small"
+                                        onClick={() => {
+                                            setSelectedFile(null);
+                                            if (fileInputRef.current) {
+                                                fileInputRef.current.value = '';
+                                            }
+                                        }}
+                                    >
+                                        Remove
+                                    </button>
+                                </div>
+                            ) : (
+                                <div className="drop-zone-content">
+                                    <div className="drop-zone-icon">📁</div>
+                                    <div className="drop-zone-text">
+                                        <strong>Drag and drop a .tar.gz file here</strong>
+                                        <span>or</span>
+                                    </div>
+                                    <label 
+                                        className="btn btn-secondary" 
+                                        style={{ cursor: 'pointer', margin: 0, display: 'inline-block', position: 'relative' }}
+                                        htmlFor="file-upload-input"
+                                    >
+                                        Browse Files
+                                        <input
+                                            id="file-upload-input"
+                                            ref={fileInputRef}
+                                            type="file"
+                                            onChange={handleFileSelect}
+                                            style={{ 
+                                                position: 'absolute', 
+                                                width: '1px', 
+                                                height: '1px', 
+                                                padding: 0,
+                                                margin: '-1px',
+                                                overflow: 'hidden',
+                                                clip: 'rect(0, 0, 0, 0)',
+                                                whiteSpace: 'nowrap',
+                                                border: 0
+                                            }}
+                                            aria-label="Select a .tar.gz or .tgz file to upload"
+                                        />
+                                    </label>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
+                    <div className="actions">
+                        <button
+                            className="btn btn-primary"
+                            disabled={!selectedFile || uploading}
+                            onClick={uploadLocalFile}
+                        >
+                            {uploading ? (uploadProgress || 'Uploading...') : 'Upload Pack'}
+                        </button>
+                    </div>
+                </>
             )}
 
-            {showStatus && uploadStatus && (
-                <div className="status-section visible">
+            {uploadStatus && (
+                <div className="status-section visible" style={{ display: 'block' }}>
                     <div className="status-header">Upload Status</div>
                     <div className="status-summary">
                         <div className="status-summary-item success">
@@ -516,23 +752,19 @@ function PackCatalog() {
                         )}
                         {uploadStatus.failed.length > 0 && (
                             <>
-                                {uploadStatus.success.length > 0 && (
-                                    <div style={{ marginTop: '1rem', marginBottom: '0.75rem' }}>
-                                        <strong style={{ color: '#ff6b6b' }}>Failed uploads:</strong>
-                                    </div>
-                                )}
-                                {uploadStatus.success.length === 0 && (
-                                    <div style={{ marginBottom: '0.75rem' }}>
-                                        <strong style={{ color: '#ff6b6b' }}>Failed uploads:</strong>
-                                    </div>
-                                )}
+                                <div style={{ 
+                                    marginTop: uploadStatus.success.length > 0 ? '1rem' : '0',
+                                    marginBottom: '0.75rem' 
+                                }}>
+                                    <strong style={{ color: '#ff6b6b' }}>Failed uploads:</strong>
+                                </div>
                                 <ul className="status-list">
                                     {uploadStatus.failed.map((f, idx) => (
                                         <li key={idx} className="error">
-                                            <span className="pack-info">
+                                            <div className="pack-info">
                                                 {f.pack} ({f.version})
-                                            </span>
-                                            <span className="pack-message">{f.error}</span>
+                                            </div>
+                                            <div className="pack-message">{f.error}</div>
                                         </li>
                                     ))}
                                 </ul>
@@ -541,19 +773,6 @@ function PackCatalog() {
                     </div>
                 </div>
             )}
-
-            <div className="actions">
-                <button className="btn btn-secondary" onClick={clearSelection}>
-                    Clear Selection
-                </button>
-                <button
-                    className="btn btn-primary"
-                    disabled={selectedPacks.size === 0 || uploading}
-                    onClick={uploadSelected}
-                >
-                    {uploading ? 'Uploading...' : 'Upload Selected'}
-                </button>
-            </div>
         </div>
     );
 }
