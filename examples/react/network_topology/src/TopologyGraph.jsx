@@ -4,7 +4,7 @@ import axios from 'axios';
 import './custom_widget_platform_compatible_style.css';
 import { SearchPlusIcon, SearchMinusIcon, ExpandIcon, SyncAltIcon, UndoIcon, TimesIcon, ProjectDiagramIcon, FilterIcon, FilterCircleXmarkIcon, InfoCircleIcon, BookmarkIcon, FloppyDiskIcon } from './icons.jsx';
 
-const getAqlBody = (aql, dbname) => {
+const getAqlBody = (aql, dbname, additionalContext = {}) => {
   const params = {
     "reportId":"graphdb.aql.executor",
     "query":aql,
@@ -34,7 +34,8 @@ const getAqlBody = (aql, dbname) => {
       "node_collection":`${dbname}_nodes`,
       "contextInfo":{
           "contextIdList":[]
-      }
+      },
+      ...additionalContext
     }
   }
   const paramsString = JSON.stringify(params)
@@ -226,19 +227,85 @@ const TopologyGraph = () => {
     async function fetchGraph() {
       // Use the Vite proxy to avoid CORS issues. The proxy will forward
       // requests from /api to https://10.95.125.190/api
-      const baseUrl = "/api/portal/rdac/browseapi"
-      
-      // Only include Bearer token in dev mode
-      const headers = {};
-      if (import.meta.env.DEV) {
-        headers.Authorization = `Bearer ${import.meta.env.VITE_API_TOKEN}`;
+      const baseUrl = "/api/portal/rdac/browseapi", headers = (() => {
+        const h = {};
+        if (import.meta.env.DEV) {
+          h.Authorization = `Bearer ${import.meta.env.VITE_API_TOKEN}`;
+        }
+        return h;
+      })(), getTemplateVariable = async (varName, altNames = []) => {
+        const contextIdMap = { "CUST_TAG": "customerTag" };
+        const contextId = contextIdMap[varName] || "customerTag";
+
+        try {
+          if (window.location && window.location.search) {
+            const urlParams = new URLSearchParams(window.location.search);
+            const contextParam = urlParams.get('context');
+
+            if (contextParam) {
+              try {
+                const decodedContext = JSON.parse(atob(contextParam));
+                console.log("Decoded context from URL:", decodedContext);
+
+                if (decodedContext[contextId]) {
+                  console.log(`Found ${contextId} in URL context:`, decodedContext[contextId]);
+                  return decodedContext[contextId];
+                }
+              } catch (e) {
+                console.warn("Failed to decode context from URL:", e);
+              }
+            }
+          }
+        } catch (e) {
+          console.warn("Error getting template variable:", varName, e);
+        }
+
+        return null;
+      }, custTag = await getTemplateVariable("CUST_TAG", ["customerTag", "customer_tag"]), escapeAqlString = (str) => {
+        if (!str) return "''";
+        return `'${String(str).replace(/'/g, "''").replace(/\\/g, "\\\\")}'`;
+      }, buildNodeFilter = (tag) => {
+        const nodeTypeFilter = `(n.node_type IN ['CHASSIS', 'Chassis', 'chassis'])`;
+        const layerFilter = `(n.layer IN ['NETWORK', 'Network', 'network'])`;
+        const baseFilter = `${nodeTypeFilter} AND ${layerFilter}`;
+        if (tag) {
+          const customerTagFilter = `(n.customer_tag == ${escapeAqlString(tag)} OR n.customer_tag == null OR n.customer_tag == '')`;
+          return `(${baseFilter} AND ${customerTagFilter})`;
+        }
+        return baseFilter;
+      }, buildEdgeFilter = (tag) => {
+        const linkFilter = `e.link_type IN ['CDP','LLDP','ISIS','OSPF','BGP']`;
+        if (tag) {
+          return `((e.customer_tag == ${escapeAqlString(tag)} OR e.customer_tag == null OR e.customer_tag == '') AND ${linkFilter})`;
+        }
+        return `${linkFilter}`;
+      }, nodeFilter = buildNodeFilter(custTag), edgeFilter = buildEdgeFilter(custTag);
+
+      console.log("Template variable CUST_TAG resolved to:", custTag || "(null/empty - showing all customers)");
+      if (!custTag) {
+        console.warn("⚠️ CUST_TAG not found! Please check:");
+        console.log("1. Run in console: Object.keys(window).filter(k => k.toLowerCase().includes('customer') || k.toLowerCase().includes('tag') || k.toLowerCase().includes('context'))");
+        console.log("2. Check URL params:", window.location.search);
+        console.log("3. Check parent window:", window.parent !== window ? "Parent exists" : "No parent");
+        console.log("4. All window keys with 'context', 'template', or 'dashboard':", Object.keys(window).filter(k => /context|template|dashboard/i.test(k)));
+        console.log("5. Try: window.customerTag, window.CUST_TAG, window.dashboardContext?.customerTag");
       }
 
-      // Define AQL queries to retrieve nodes and edges from ArangoDB.
-      // const nodeQuery = getAqlBody('FOR n IN routing_protocol_topology_nodes RETURN n', 'routing_protocol_topology');
-      // const edgeQuery = getAqlBody('FOR e IN routing_protocol_topology_edges RETURN e', 'routing_protocol_topology');
-      const nodeQuery = getAqlBody('FOR n IN cfx_rdaf_topology_new_nodes RETURN n', 'cfx_rdaf_topology_new');
-      const edgeQuery = getAqlBody('FOR e IN cfx_rdaf_topology_new_edges RETURN e', 'cfx_rdaf_topology_new');
+      // Define AQL queries to retrieve nodes and edges from ArangoDB with customer tag filtering
+      const nodeQuery = getAqlBody(
+        nodeFilter 
+          ? `FOR n IN cfx_rdaf_topology_nodes FILTER ${nodeFilter} RETURN n`
+          : `FOR n IN cfx_rdaf_topology_nodes FILTER (n.node_type IN ['CHASSIS', 'Chassis', 'chassis']) AND (n.layer IN ['NETWORK', 'Network', 'network']) RETURN n`,
+        'cfx_rdaf_topology',
+        { customerTag: custTag, CUST_TAG: custTag }
+      );
+      const edgeQuery = getAqlBody(
+        edgeFilter
+          ? `FOR e IN cfx_rdaf_topology_edges FILTER ${edgeFilter} RETURN e`
+          : `FOR e IN cfx_rdaf_topology_edges FILTER e.link_type IN ['CDP','LLDP','ISIS','OSPF','BGP'] RETURN e`,
+        'cfx_rdaf_topology',
+        { customerTag: custTag, CUST_TAG: custTag }
+      );
 
       try {
         // Fire off the node and edge queries concurrently.
@@ -274,39 +341,61 @@ const TopologyGraph = () => {
           };
         });
 
+        // Create a Set of node IDs for efficient lookup
+        const nodeIds = new Set(nodes.map(n => n.data.id));
+        
         // Map raw edge documents into the Cytoscape format.
-        const edges = rawEdges.map((e, index) => {
-          // ArangoDB edges store the `_from` and `_to` fields in the format
-          // "collectionName/key". We strip the prefix to obtain just the key.
-          const extractKey = (fullId) => {
-            if (typeof fullId === 'string' && fullId.includes('/')) {
-              return fullId.split('/')[1];
+        const edges = rawEdges
+          .map((e, index) => {
+            // ArangoDB edges store the `_from` and `_to` fields in the format
+            // "collectionName/key". We strip the prefix to obtain just the key.
+            const extractKey = (fullId) => {
+              if (typeof fullId === 'string' && fullId.includes('/')) {
+                return fullId.split('/')[1];
+              }
+              return fullId;
+            };
+            // Handle different edge field formats: _from/_to, from/to, left_id/right_id
+            const source = extractKey(e.left_id || e._from || e.from);
+            const target = extractKey(e.right_id || e._to || e.to);
+          //   console.log("Source", e.left_id, "Target", e.right_id);
+            const edge = {
+              data: {
+                // ...e,
+                // id: e._key || e._id || `edge-${index}`,
+                id: e.unique_id || `edge-${index}`,
+                source: source,
+                target: target,
+                source_device: e.left_label || null,
+                target_device: e.right_label || null,
+                target_port: e.right_interface || null,
+                source_port: e.left_interface || null,
+                left_ip: e.left_ip || null,
+                right_ip: e.right_ip || null,
+                link_type: e.link_type || e.device_object || null,
+                left_area: e.left_area || null,
+                left_metric: e.left_metric || null,
+                right_area: e.right_area || null,
+                right_metric: e.right_metric || null,
+                state: e.state || null,
+                snpa: e.snpa || null,
+                holdtime: e.holdtime || null,
+              }
+            };
+          //   console.log("Edge111", edge.data.id, edge.data.source, edge.data.target);
+            return edge;
+          })
+          // Filter out edges where either source or target node doesn't exist
+          // This prevents Cytoscape errors when edges reference missing nodes
+          .filter(edge => {
+            const sourceExists = nodeIds.has(edge.data.source);
+            const targetExists = nodeIds.has(edge.data.target);
+            if (!sourceExists || !targetExists) {
+              console.warn(`Filtering out edge ${edge.data.id}: source "${edge.data.source}" exists: ${sourceExists}, target "${edge.data.target}" exists: ${targetExists}`);
+              return false;
             }
-            return fullId;
-          };
-          // Handle different edge field formats: _from/_to, from/to, left_id/right_id
-          const source = extractKey(e.left_id || e._from || e.from);
-          const target = extractKey(e.right_id || e._to || e.to);
-        //   console.log("Source", e.left_id, "Target", e.right_id);
-          const edge = {
-            data: {
-              // ...e,
-              // id: e._key || e._id || `edge-${index}`,
-              id: e.unique_id || `edge-${index}`,
-              source: source,
-              target: target,
-              source_device: e.left_label || null,
-              target_device: e.right_label || null,
-              target_port: e.right_interface || null,
-              source_port: e.left_interface || null,
-              left_ip: e.left_ip || null,
-              right_ip: e.right_ip || null,
-              link_type: e.link_type || e.device_object || null,
-            }
-          };
-        //   console.log("Edge111", edge.data.id, edge.data.source, edge.data.target);
-          return edge;
-        });
+            return true;
+          });
         const allElems = [...nodes, ...edges];
         setAllElements(allElems);
         setElements(allElems);
@@ -353,7 +442,11 @@ const TopologyGraph = () => {
     
     setLoadingAlerts(true);
     try {
-      const cfxqlQuery = `a_asset_ip_address is '${deviceIP}' and a_status is 'ACTIVE' and a_source_system_id is not 'Alert Group'`;
+      // Use a_en_node_id instead of a_asset_ip_address to match alert badge fetching
+      // deviceIP might be an IP address, so try to construct node ID format (IP_CHASSIS)
+      // or use deviceIP directly if it's already in node ID format
+      const nodeIdForQuery = deviceIP.includes('_CHASSIS') ? deviceIP : `${deviceIP}_CHASSIS`;
+      const cfxqlQuery = `a_en_node_id is '${nodeIdForQuery}' and a_status is 'ACTIVE' and a_source_system_id is not 'Alert Group'`;
       
       const baseUrl = "/api/v2/pstreams/pstream/oia-alerts-stream/data";
       const params = new URLSearchParams({
@@ -368,11 +461,22 @@ const TopologyGraph = () => {
 
       const response = await axios.get(`${baseUrl}?${params.toString()}`, { headers });
       
-      const alerts = response.data?.serviceResult?.data?.results || [];
+      // Read from pstream_data instead of serviceResult.data.results
+      const alerts = response?.data?.pstream_data || [];
       setNodeAlerts(alerts);
-      console.log(`Fetched ${alerts.length} alerts for device ${deviceIP}`);
+      console.log(`[NODE DETAILS ALERTS] Fetched ${alerts.length} alerts for node ${nodeIdForQuery} (input: ${deviceIP})`, {
+        query: cfxqlQuery,
+        responseKeys: Object.keys(response?.data || {}),
+        hasPstreamData: !!response?.data?.pstream_data,
+        pstreamDataLength: response?.data?.pstream_data?.length,
+        hasServiceResult: !!response?.data?.serviceResult
+      });
     } catch (error) {
-      console.error('Failed to fetch node alerts:', error);
+      console.error('[NODE DETAILS ALERTS] Failed to fetch node alerts:', error, 'Error details:', {
+        message: error?.message,
+        stack: error?.stack,
+        response: error?.response?.data
+      });
       setNodeAlerts([]);
     } finally {
       setLoadingAlerts(false);
@@ -541,24 +645,31 @@ const TopologyGraph = () => {
   // Fetch alert counts for all devices
   useEffect(() => {
     async function fetchAlertCounts() {
-      if (allDevices.length === 0) return;
+      console.log('[ALERT BADGE DEBUG] Alert count fetch useEffect triggered - allDevices.length:', allDevices.length);
+      if (allDevices.length === 0) {
+        console.log('[ALERT BADGE DEBUG] Skipping alert fetch - allDevices is empty');
+        return;
+      }
 
-      // Get all unique IPs
-      const deviceIPs = allDevices
-        .map(d => d.ip)
-        .filter(ip => ip); // Filter out null/undefined IPs
+      // Get all unique node IDs (not IPs)
+      const nodeIds = allDevices
+        .map(d => d.id)
+        .filter(id => id); // Filter out null/undefined IDs
 
-      if (deviceIPs.length === 0) return;
+      console.log('[ALERT BADGE DEBUG] Node IDs to query:', nodeIds.length, 'Node IDs:', nodeIds.slice(0, 10));
+
+      if (nodeIds.length === 0) return;
 
       try {
-        // Build the cfxql query to filter by IPs and active status
-        const ipList = deviceIPs.map(ip => `'${ip}'`).join(',');
-        const cfxqlQuery = `a_asset_ip_address in [${ipList}] and a_status is 'ACTIVE' `;
+        // Build the cfxql query to filter by node IDs and active status
+        // Use a_en_node_id instead of a_asset_ip_address to match topology dashboard
+        const nodeIdList = nodeIds.map(id => `'${id}'`).join(',');
+        const cfxqlQuery = `a_en_node_id in [${nodeIdList}] and a_status is 'ACTIVE' and a_source_system_id is not 'Alert Group'`;
         
         const baseUrl = "/api/v2/pstreams/pstream/oia-alerts-stream/data";
         const params = new URLSearchParams({
           cfxql_query: cfxqlQuery,
-          group_by: 'a_asset_ip_address',
+          group_by: 'a_en_node_id',
           aggs: 'value_count:count_',
           limit: '1000'
         });
@@ -568,24 +679,43 @@ const TopologyGraph = () => {
           headers.Authorization = `Bearer ${import.meta.env.VITE_API_TOKEN}`;
         }
 
+        console.log('[ALERT BADGE DEBUG] Fetching alert counts from:', baseUrl, 'query:', cfxqlQuery, 'Using a_en_node_id (matching topology dashboard)');
         const response = await axios.get(`${baseUrl}?${params.toString()}`, { headers });
         
-        // Parse the response
-        const series = response.data?.serviceResult?.data?.series || [];
+        console.log('[ALERT BADGE DEBUG] Full API response:', JSON.stringify(response?.data, null, 2));
+        console.log('[ALERT BADGE DEBUG] Alert API response structure:', {
+          hasPstreamSeriesData: !!response?.data?.pstream_series_data,
+          pstreamSeriesDataLength: response?.data?.pstream_series_data?.length,
+          hasServiceResult: !!response?.data?.serviceResult,
+          hasData: !!response?.data?.serviceResult?.data,
+          hasSeries: !!response?.data?.serviceResult?.data?.series,
+          seriesLength: response?.data?.serviceResult?.data?.series?.length,
+          responseKeys: Object.keys(response?.data || {})
+        });
+        
+        // Parse the response - use pstream_series_data instead of serviceResult.data.series
+        const series = response?.data?.pstream_series_data || [];
+        console.log('[ALERT BADGE DEBUG] Raw series data:', series.slice(0, 5));
         const counts = {};
         
         series.forEach(item => {
-          const ip = item.group?.[0];
+          const nodeId = item.group?.[0];
           const count = item.values?.[0]?.value || 0;
-          if (ip) {
-            counts[ip] = count;
+          console.log('[ALERT BADGE DEBUG] Processing series item - Node ID:', nodeId, 'Count:', count, 'Full item:', item);
+          if (nodeId) {
+            counts[nodeId] = count;
           }
         });
         
+        console.log('[ALERT BADGE DEBUG] Setting alert counts state - counts:', counts, 'Keys:', Object.keys(counts), 'Total node IDs with alerts:', Object.keys(counts).length);
         setAlertCounts(counts);
         console.log('Alert counts fetched:', counts);
       } catch (error) {
-        console.error('Failed to fetch alert counts:', error);
+        console.error('[ALERT BADGE DEBUG] Failed to fetch alert counts:', error, 'Error details:', {
+          message: error?.message,
+          stack: error?.stack,
+          response: error?.response?.data
+        });
       }
     }
 
@@ -807,85 +937,173 @@ const TopologyGraph = () => {
 
   // Render alert count badges on nodes
   useEffect(() => {
-    if (!cy || Object.keys(alertCounts).length === 0) return;
-
-    // Remove existing badges
-    document.querySelectorAll('.alert-badge').forEach(el => el.remove());
-
-    // Add badges for nodes with alerts
-    cy.nodes().forEach(node => {
-      const deviceIP = node.data('device_ip');
-      const alertCount = alertCounts[deviceIP];
+    if (!cy || Object.keys(alertCounts).length === 0) {
+      console.log('[ALERT BADGE DEBUG] setupAlertBadges skipped - cy:', !!cy, 'alertCounts keys:', Object.keys(alertCounts).length);
+      return;
+    }
+    
+    console.log('[ALERT BADGE DEBUG] setupAlertBadges starting - alertCounts:', alertCounts, 'alertCounts keys:', Object.keys(alertCounts), 'cy.nodes().length:', cy?.nodes()?.length);
+    
+    const setupAlertBadges = () => {
+      console.log('[ALERT BADGE DEBUG] setupAlertBadges executing - alertCounts:', alertCounts, 'total nodes:', cy.nodes().length);
       
-      if (alertCount && alertCount > 0) {
+      // Clean up existing alert badges and their listeners
+      document.querySelectorAll('.alert-badge').forEach(el => {
+        if (el._alertHandlers && cy) {
+          try {
+            cy.off('pan zoom', el._alertHandlers.panZoom);
+            if (el._alertHandlers.position) {
+              cy.off('position', `node[id="${el._alertHandlers.nodeId}"]`, el._alertHandlers.position);
+            }
+            if (el._alertHandlers.drag) {
+              cy.off('drag', `node[id="${el._alertHandlers.nodeId}"]`, el._alertHandlers.drag);
+            }
+          } catch(e) {
+            console.warn('Error removing alert badge listeners:', e);
+          }
+        }
+        el.remove();
+      });
+      
+      // Create new alert badges with proper event listeners
+      let badgesCreated = 0;
+      let badgesSkipped = 0;
+      const nodeIPs = [];
+      
+      cy.nodes().forEach(node => {
         const nodeId = node.id();
+        const deviceIP = node.data('device_ip');
         
-        // Create badge element
-        const badge = document.createElement('div');
-        badge.className = 'alert-badge';
-        badge.setAttribute('data-node-id', nodeId);
-        badge.textContent = alertCount > 99 ? '99+' : alertCount;
+        // Match alerts by node_id (a_en_node_id) instead of device_ip (a_asset_ip_address)
+        // Try both the nodeId as-is and with _CHASSIS suffix to match API format
+        let alertCount = alertCounts[nodeId];
+        if (!alertCount && deviceIP) {
+          // Try matching with IP_CHASSIS format (API returns node IDs like "10.95.140.118_CHASSIS")
+          const nodeIdWithSuffix = `${deviceIP}_CHASSIS`;
+          alertCount = alertCounts[nodeIdWithSuffix];
+          if (alertCount) {
+            console.log(`[ALERT BADGE DEBUG] Matched alert using IP_CHASSIS format: ${nodeId} -> ${nodeIdWithSuffix}, count: ${alertCount}`);
+          }
+        }
         
-        // Make it circular - adjust size based on content
-        const badgeSize = alertCount > 99 ? '28px' : (alertCount > 9 ? '24px' : '20px');
-        const fontSize = alertCount > 99 ? '9px' : '10px';
+        nodeIPs.push({ nodeId: nodeId, device_ip: deviceIP, alertCount: alertCount, lookupKey: alertCount ? (alertCounts[nodeId] ? nodeId : `${deviceIP}_CHASSIS`) : nodeId });
         
-        badge.style.cssText = `
-          position: absolute;
-          background: #F44336;
-          color: white;
-          border-radius: 50%;
-          font-size: ${fontSize};
-          font-weight: bold;
-          pointer-events: none;
-          z-index: 1000;
-          width: ${badgeSize};
-          height: ${badgeSize};
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          text-align: center;
-          box-shadow: 0 2px 4px rgba(0,0,0,0.4);
-          border: 2px solid white;
-          line-height: 1;
-        `;
-        
-        document.body.appendChild(badge);
-        
-        // Function to update badge position
-        const updateBadgePosition = () => {
-          const pos = node.renderedPosition();
-          const zoom = cy.zoom();
-          const pan = cy.pan();
+        if (alertCount && alertCount > 0) {
+          badgesCreated++;
+          const badge = document.createElement('div');
+          badge.className = 'alert-badge';
+          badge.setAttribute('data-node-id', nodeId);
+          badge.textContent = alertCount > 99 ? '99+' : alertCount;
           
-          // Position to overlap the top-right corner of the node
-          // Node size is 60px (radius 30px from center)
-          const badgeSizeNum = parseInt(badgeSize);
-          const halfBadge = badgeSizeNum / 2;
+          const badgeSize = alertCount > 99 ? '28px' : (alertCount > 9 ? '24px' : '20px');
+          const fontSize = alertCount > 99 ? '9px' : '10px';
           
-          // Position badge center at (pos.x + 15, pos.y - 15) for nice overlap
-          // Then subtract half the badge size to position the top-left corner
-          const badgeCenterX = pos.x + 15;
-          const badgeCenterY = pos.y - 15;
+          badge.style.cssText = `
+            position: absolute;
+            background: #F44336;
+            color: white;
+            border-radius: 50%;
+            font-size: ${fontSize};
+            font-weight: bold;
+            pointer-events: none;
+            z-index: 1000;
+            width: ${badgeSize};
+            height: ${badgeSize};
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.4);
+            border: 2px solid white;
+            line-height: 1;
+          `;
           
-          badge.style.left = `${badgeCenterX - halfBadge}px`;
-          badge.style.top = `${badgeCenterY - halfBadge}px`;
-        };
-        
-        // Initial position
-        updateBadgePosition();
-        
-        // Update position on pan/zoom
-        cy.on('pan zoom', updateBadgePosition);
-        cy.on('position', `node[id="${nodeId}"]`, updateBadgePosition);
-      }
-    });
-
+          document.body.appendChild(badge);
+          
+          // Update function that gets fresh node reference
+          const updateBadgePosition = () => {
+            // Get fresh node reference from Cytoscape instance to avoid stale references
+            const node = cy.getElementById(nodeId);
+            if (!node || node.length === 0) return;
+            
+            try {
+              const pos = node.renderedPosition();
+              const badgeSizeNum = parseInt(badgeSize);
+              const halfBadge = badgeSizeNum / 2;
+              const badgeCenterX = pos.x + 15;
+              const badgeCenterY = pos.y - 15;
+              
+              badge.style.left = `${badgeCenterX - halfBadge}px`;
+              badge.style.top = `${badgeCenterY - halfBadge}px`;
+              
+              // Check for popups and adjust z-index dynamically
+              const allDivs = document.querySelectorAll('div[style*="position: absolute"], div[style*="position: fixed"]');
+              const hasPopups = Array.from(allDivs).some(el => {
+                if (el.classList.contains('alert-badge')) return false;
+                const zIndex = parseInt(window.getComputedStyle(el).zIndex) || 0;
+                return zIndex > 800;
+              });
+              
+              badge.style.zIndex = hasPopups ? '799' : '1000';
+            } catch(e) {
+              console.warn('Error updating alert badge position:', e);
+            }
+          };
+          
+          // Initial position update
+          updateBadgePosition();
+          
+          // Event handlers
+          const panZoomHandler = () => updateBadgePosition();
+          const positionHandler = () => updateBadgePosition();
+          const dragHandler = () => updateBadgePosition();
+          
+          // Attach event listeners
+          cy.on('pan zoom', panZoomHandler);
+          cy.on('position', `node[id="${nodeId}"]`, positionHandler);
+          cy.on('drag', `node[id="${nodeId}"]`, dragHandler);
+          
+          // Store handlers for cleanup
+          badge._alertHandlers = {
+            panZoom: panZoomHandler,
+            position: positionHandler,
+            drag: dragHandler,
+            nodeId: nodeId
+          };
+        } else {
+          badgesSkipped++;
+        }
+      });
+      
+      console.log('[ALERT BADGE DEBUG] Badge creation complete - Created:', badgesCreated, 'Skipped:', badgesSkipped, 'Total nodes:', nodeIPs.length);
+      console.log('[ALERT BADGE DEBUG] Node IDs vs Alert Counts:', nodeIPs.slice(0, 10), 'alertCounts keys (node IDs):', Object.keys(alertCounts).slice(0, 10));
+      console.log('[ALERT BADGE DEBUG] Sample node data:', nodeIPs.filter(n => n.alertCount > 0).slice(0, 5));
+    };
+    
+    // Use a slightly longer timeout to ensure DOM and Cytoscape are ready after detail panel toggle
+    const timeoutId = setTimeout(setupAlertBadges, 50);
+    
     // Cleanup
     return () => {
-      document.querySelectorAll('.alert-badge').forEach(el => el.remove());
+      clearTimeout(timeoutId);
+      document.querySelectorAll('.alert-badge').forEach(el => {
+        if (el._alertHandlers && cy) {
+          try {
+            cy.off('pan zoom', el._alertHandlers.panZoom);
+            if (el._alertHandlers.position) {
+              cy.off('position', `node[id="${el._alertHandlers.nodeId}"]`, el._alertHandlers.position);
+            }
+            if (el._alertHandlers.drag) {
+              cy.off('drag', `node[id="${el._alertHandlers.nodeId}"]`, el._alertHandlers.drag);
+            }
+          } catch(e) {
+            console.warn('Error removing alert badge listeners:', e);
+          }
+        }
+        el.remove();
+      });
     };
-  }, [cy, alertCounts, elements]);
+  }, [cy, alertCounts, elements, selectedNode, selectedEdge, contextMenu]);
 
   // Update stylesheet when theme changes
   useEffect(() => {
@@ -1263,6 +1481,7 @@ const TopologyGraph = () => {
         }
       `}</style>
       {/* Toggle Control Panel Button */}
+      {(contextMenu || selectedNode || selectedEdge || showFilterHelp || showDevicePopup) ? null : (
       <button
         onClick={() => setShowControlPanel(!showControlPanel)}
         title={showControlPanel ? "Hide Control Panel" : "Show Control Panel"}
@@ -1291,6 +1510,7 @@ const TopologyGraph = () => {
       >
         {showControlPanel ? '◀' : '▶'}
       </button>
+      )}
 
       {/* Left Side Panel */}
       {showControlPanel && (
@@ -2301,7 +2521,10 @@ const TopologyGraph = () => {
                 flex: 1
               }}
             >
-              Alerts {alertCounts[selectedNode.device_ip] ? `(${alertCounts[selectedNode.device_ip]})` : ''}
+              Alerts {(() => {
+                const alertCount = alertCounts[selectedNode.id] || (selectedNode.device_ip ? alertCounts[`${selectedNode.device_ip}_CHASSIS`] : null);
+                return alertCount ? `(${alertCount})` : '';
+              })()}
             </button>
           </div>
           
@@ -2365,6 +2588,13 @@ const TopologyGraph = () => {
                     <th style={{ padding: '8px', textAlign: 'left', fontWeight: '600', whiteSpace: 'nowrap' }}>Source IP</th>
                     <th style={{ padding: '8px', textAlign: 'left', fontWeight: '600', whiteSpace: 'nowrap' }}>Target IP</th>
                     <th style={{ padding: '8px', textAlign: 'left', fontWeight: '600', whiteSpace: 'nowrap' }}>Link Type</th>
+                    <th style={{ padding: '8px', textAlign: 'left', fontWeight: '600', whiteSpace: 'nowrap' }}>Source Area</th>
+                    <th style={{ padding: '8px', textAlign: 'left', fontWeight: '600', whiteSpace: 'nowrap' }}>Source Metric</th>
+                    <th style={{ padding: '8px', textAlign: 'left', fontWeight: '600', whiteSpace: 'nowrap' }}>Destination Area</th>
+                    <th style={{ padding: '8px', textAlign: 'left', fontWeight: '600', whiteSpace: 'nowrap' }}>Destination Metric</th>
+                    <th style={{ padding: '8px', textAlign: 'left', fontWeight: '600', whiteSpace: 'nowrap' }}>State</th>
+                    <th style={{ padding: '8px', textAlign: 'left', fontWeight: '600', whiteSpace: 'nowrap' }}>SNPA</th>
+                    <th style={{ padding: '8px', textAlign: 'left', fontWeight: '600', whiteSpace: 'nowrap' }}>Hold Time</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -2396,6 +2626,27 @@ const TopologyGraph = () => {
                         </td>
                         <td style={{ padding: '8px', whiteSpace: 'nowrap' }}>
                           {edgeData.link_type || '-'}
+                        </td>
+                        <td style={{ padding: '8px', whiteSpace: 'nowrap' }}>
+                          {edgeData.left_area || '-'}
+                        </td>
+                        <td style={{ padding: '8px', whiteSpace: 'nowrap' }}>
+                          {edgeData.left_metric || '-'}
+                        </td>
+                        <td style={{ padding: '8px', whiteSpace: 'nowrap' }}>
+                          {edgeData.right_area || '-'}
+                        </td>
+                        <td style={{ padding: '8px', whiteSpace: 'nowrap' }}>
+                          {edgeData.right_metric || '-'}
+                        </td>
+                        <td style={{ padding: '8px', whiteSpace: 'nowrap' }}>
+                          {edgeData.state || '-'}
+                        </td>
+                        <td style={{ padding: '8px', whiteSpace: 'nowrap' }}>
+                          {edgeData.snpa || '-'}
+                        </td>
+                        <td style={{ padding: '8px', whiteSpace: 'nowrap' }}>
+                          {edgeData.holdtime || '-'}
                         </td>
                       </tr>
                     );
