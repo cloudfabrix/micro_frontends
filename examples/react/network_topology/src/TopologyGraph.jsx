@@ -6,62 +6,62 @@ import { SearchPlusIcon, SearchMinusIcon, ExpandIcon, SyncAltIcon, UndoIcon, Tim
 
 const getAqlBody = (aql, dbname, additionalContext = {}) => {
   const params = {
-    "reportId":"graphdb.aql.executor",
-    "query":aql,
-    context:{
-      "id":"user-dashboard-rda-graph-aql-editor-template",
-      "name":"rda-graph-aql-editor-template",
-      "app-context": {"appName":"user-dashboard/rda-graph-app"},
-      "USER_ID":"siri.kothe@cloudfabrix.com",
-      "USER_PROJECTS":["e6664cf2-3c25-11f0-9445-0242ac140006"],
-      "projectId":["e6664cf2-3c25-11f0-9445-0242ac140006"],
-      "USER_ROLE":"msp-admin",
-      "USER_GROUP_NAME":"MSP Admin",
-      "USER_GROUP_TAGS":[],
-      "MSP_ID":"adc5c7c3-ee44-4e66-8221-8606225796fe",
-      "ENV_APP_TYPE":"onprem",
-      "ENV_HOSTNAME":"1c094382ea01",
-      "ENV_NO_GRAPHDB":"",
-      "OIA":"enabled",
-      "app_filter":null,
+    "reportId": "graphdb.aql.executor",
+    "query": aql,
+    context: {
+      "id": "user-dashboard-rda-graph-aql-editor-template",
+      "name": "rda-graph-aql-editor-template",
+      "app-context": { "appName": "user-dashboard/rda-graph-app" },
+      "USER_ID": "siri.kothe@cloudfabrix.com",
+      "USER_PROJECTS": ["e6664cf2-3c25-11f0-9445-0242ac140006"],
+      "projectId": ["e6664cf2-3c25-11f0-9445-0242ac140006"],
+      "USER_ROLE": "msp-admin",
+      "USER_GROUP_NAME": "MSP Admin",
+      "USER_GROUP_TAGS": [],
+      "MSP_ID": "adc5c7c3-ee44-4e66-8221-8606225796fe",
+      "ENV_APP_TYPE": "onprem",
+      "ENV_HOSTNAME": "1c094382ea01",
+      "ENV_NO_GRAPHDB": "",
+      "OIA": "enabled",
+      "app_filter": null,
       "view-context": {
-        "appName":"user-dashboard/rda-graph-app",
-        "pageName":"rda-graph-aql-editor-template"
+        "appName": "user-dashboard/rda-graph-app",
+        "pageName": "rda-graph-aql-editor-template"
       },
-      "graph_name":`${dbname}_graph`,
-      "db_name":dbname,
-      "edge_collection":`${dbname}_edges`,
-      "node_collection":`${dbname}_nodes`,
-      "contextInfo":{
-          "contextIdList":[]
+      "graph_name": `${dbname}_graph`,
+      "db_name": dbname,
+      "edge_collection": `${dbname}_edges`,
+      "node_collection": `${dbname}_nodes`,
+      "contextInfo": {
+        "contextIdList": []
       },
       ...additionalContext
     }
   }
   const paramsString = JSON.stringify(params)
   return {
-    "serviceRequestDescriptor":{
-      "serviceName":"saas-reports",
-      "version":"*",
-      "params":{
-        "params":[
+    "serviceRequestDescriptor": {
+      "serviceName": "saas-reports",
+      "version": "*",
+      "params": {
+        "params": [
           paramsString
         ]
       },
-      "methodName":"getReport",
-      "ignoreCall":true,
-      "parseOutput":false
+      "methodName": "getReport",
+      "ignoreCall": true,
+      "parseOutput": false
     }
   }
 }
 
 const getResponseData = (response) => {
-    const serviceResult = response.serviceResult || {}
+  const serviceResult = response.serviceResult || {}
   const results = serviceResult.results || "[]"
   return JSON.parse(results)
 }
 
-  
+
 const TopologyGraph = () => {
   const [cy, setCy] = useState(null);
   const [elements, setElements] = useState([]);
@@ -94,7 +94,7 @@ const TopologyGraph = () => {
   const [showSaveViewDialog, setShowSaveViewDialog] = useState(false); // Show/hide save view dialog
   const [newViewName, setNewViewName] = useState(''); // Name for new view
   const [showViewsMenu, setShowViewsMenu] = useState(false); // Show/hide views dropdown
-  
+
   // Link type filters
   const [linkTypeFilters, setLinkTypeFilters] = useState({
     'CDP': true,
@@ -115,20 +115,20 @@ const TopologyGraph = () => {
           const parentStyles = window.parent.getComputedStyle(window.parent.document.documentElement);
           // Get all property names from parent
           const parentProps = Array.from(parentStyles);
-          
+
           // Filter for CSS custom properties (variables starting with --)
           const cssVariables = parentProps.filter(prop => prop.startsWith('--'));
-          
+
           // Get the iframe's root element
           const iframeRoot = document.documentElement;
-          
+
           // Copy each CSS variable to the iframe
           cssVariables.forEach(varName => {
             const value = parentStyles.getPropertyValue(varName);
             iframeRoot.style.setProperty(varName, value);
           });
 
-                    
+
           const bgColor1 = parentStyles.getPropertyValue('--v-theme-background');
           const isDarkMode = bgColor1 && bgColor1 != "255,255,255"
           setIsDarkTheme(isDarkMode);
@@ -137,7 +137,7 @@ const TopologyGraph = () => {
           } else {
             document.documentElement.setAttribute('data-theme', 'light');
           }
-  
+
           // // Detect if parent is using dark theme by checking background color
           // const bgColor = parentStyles.getPropertyValue('--bg') || parentStyles.getPropertyValue('background-color');
           // // Simple heuristic: if background is dark, it's dark theme
@@ -148,7 +148,7 @@ const TopologyGraph = () => {
           // console.log("Is dark mode", isDarkMode);
           // console.log("Background color", bgColor);
           // setIsDarkTheme(isDarkMode);
-          
+
           // // Copy data-theme attribute if present
           // const parentTheme = window.parent.document.documentElement.getAttribute('data-theme');
           // if (parentTheme) {
@@ -293,7 +293,7 @@ const TopologyGraph = () => {
 
       // Define AQL queries to retrieve nodes and edges from ArangoDB with customer tag filtering
       const nodeQuery = getAqlBody(
-        nodeFilter 
+        nodeFilter
           ? `FOR n IN cfx_rdaf_topology_nodes FILTER ${nodeFilter} RETURN n`
           : `FOR n IN cfx_rdaf_topology_nodes FILTER (n.node_type IN ['CHASSIS', 'Chassis', 'chassis']) AND (n.layer IN ['NETWORK', 'Network', 'network']) RETURN n`,
         'cfx_rdaf_topology',
@@ -323,7 +323,7 @@ const TopologyGraph = () => {
           const id = n.node_id || n._key || n._id || n.id || n.key;
           return {
             data: {
-            id,
+              id,
               label: n.node_label || n.label || n.name || id,
               group: n.group || n.type || null,
               device_model: n.device_model || null,
@@ -336,14 +336,14 @@ const TopologyGraph = () => {
               device_vendor: n.device_vendor || null,
               device_serial_number: n.parent_sn || null,
 
-            //   ...n,
+              //   ...n,
             }
           };
         });
 
         // Create a Set of node IDs for efficient lookup
         const nodeIds = new Set(nodes.map(n => n.data.id));
-        
+
         // Map raw edge documents into the Cytoscape format.
         const edges = rawEdges
           .map((e, index) => {
@@ -358,7 +358,7 @@ const TopologyGraph = () => {
             // Handle different edge field formats: _from/_to, from/to, left_id/right_id
             const source = extractKey(e.left_id || e._from || e.from);
             const target = extractKey(e.right_id || e._to || e.to);
-          //   console.log("Source", e.left_id, "Target", e.right_id);
+            //   console.log("Source", e.left_id, "Target", e.right_id);
             const edge = {
               data: {
                 // ...e,
@@ -382,7 +382,7 @@ const TopologyGraph = () => {
                 holdtime: e.holdtime || null,
               }
             };
-          //   console.log("Edge111", edge.data.id, edge.data.source, edge.data.target);
+            //   console.log("Edge111", edge.data.id, edge.data.source, edge.data.target);
             return edge;
           })
           // Filter out edges where either source or target node doesn't exist
@@ -399,7 +399,7 @@ const TopologyGraph = () => {
         const allElems = [...nodes, ...edges];
         setAllElements(allElems);
         setElements(allElems);
-        
+
         // Extract unique device models and count nodes per model
         const models = new Set();
         const modelCounts = {};
@@ -414,7 +414,7 @@ const TopologyGraph = () => {
         setDeviceModelCounts(modelCounts);
         console.log("Device models", models)
         console.log("Counts", modelCounts);
-        
+
         // Store all devices with their details for the device selection popup
         const devicesWithDetails = nodes.map(node => ({
           id: node.data.id,
@@ -439,7 +439,7 @@ const TopologyGraph = () => {
   // Fetch alerts for a specific node
   const fetchNodeAlerts = async (deviceIP) => {
     if (!deviceIP) return;
-    
+
     setLoadingAlerts(true);
     try {
       // Use a_en_node_id instead of a_asset_ip_address to match alert badge fetching
@@ -447,7 +447,7 @@ const TopologyGraph = () => {
       // or use deviceIP directly if it's already in node ID format
       const nodeIdForQuery = deviceIP.includes('_CHASSIS') ? deviceIP : `${deviceIP}_CHASSIS`;
       const cfxqlQuery = `a_en_node_id is '${nodeIdForQuery}' and a_status is 'ACTIVE' and a_source_system_id is not 'Alert Group'`;
-      
+
       const baseUrl = "/api/v2/pstreams/pstream/oia-alerts-stream/data";
       const params = new URLSearchParams({
         cfxql_query: cfxqlQuery,
@@ -460,7 +460,7 @@ const TopologyGraph = () => {
       }
 
       const response = await axios.get(`${baseUrl}?${params.toString()}`, { headers });
-      
+
       // Read from pstream_data instead of serviceResult.data.results
       const alerts = response?.data?.pstream_data || [];
       setNodeAlerts(alerts);
@@ -491,11 +491,11 @@ const TopologyGraph = () => {
         if (import.meta.env.DEV) {
           headers.Authorization = `Bearer ${import.meta.env.VITE_API_TOKEN}`;
         }
-        
+
         const response = await axios.post('/api/portal/userpref/get/network_topology_views', {
           reportId: 'network_topology_views'
         }, { headers });
-        
+
         const views = response.data?.preferences || {};
         setSavedViews(views);
         console.log('Loaded saved views:', Object.keys(views).length);
@@ -529,7 +529,7 @@ const TopologyGraph = () => {
       if (import.meta.env.DEV) {
         headers.Authorization = `Bearer ${import.meta.env.VITE_API_TOKEN}`;
       }
-      
+
       // Save view metadata to views list
       const updatedViews = {
         ...savedViews,
@@ -575,13 +575,13 @@ const TopologyGraph = () => {
       if (import.meta.env.DEV) {
         headers.Authorization = `Bearer ${import.meta.env.VITE_API_TOKEN}`;
       }
-      
+
       const response = await axios.post(`/api/portal/userpref/get/network_topology_view_data_${viewName}`, {
         reportId: `network_topology_view_data_${viewName}`
       }, { headers });
-      
+
       const viewData = response.data?.preferences;
-      
+
       if (!viewData) {
         alert('View not found');
         return;
@@ -595,7 +595,7 @@ const TopologyGraph = () => {
       setLinkTypeFilters(viewData.linkTypeFilters || {});
       setShowUnmanagedDevices(viewData.showUnmanagedDevices !== undefined ? viewData.showUnmanagedDevices : true);
       setPendingFilterDevices([]);
-      
+
       setShowViewsMenu(false);
       console.log(`Loaded view: ${viewName}`);
     } catch (error) {
@@ -615,7 +615,7 @@ const TopologyGraph = () => {
       if (import.meta.env.DEV) {
         headers.Authorization = `Bearer ${import.meta.env.VITE_API_TOKEN}`;
       }
-      
+
       const updatedViews = { ...savedViews };
       delete updatedViews[viewName];
 
@@ -665,7 +665,7 @@ const TopologyGraph = () => {
         // Use a_en_node_id instead of a_asset_ip_address to match topology dashboard
         const nodeIdList = nodeIds.map(id => `'${id}'`).join(',');
         const cfxqlQuery = `a_en_node_id in [${nodeIdList}] and a_status is 'ACTIVE' and a_source_system_id is not 'Alert Group'`;
-        
+
         const baseUrl = "/api/v2/pstreams/pstream/oia-alerts-stream/data";
         const params = new URLSearchParams({
           cfxql_query: cfxqlQuery,
@@ -681,7 +681,7 @@ const TopologyGraph = () => {
 
         console.log('[ALERT BADGE DEBUG] Fetching alert counts from:', baseUrl, 'query:', cfxqlQuery, 'Using a_en_node_id (matching topology dashboard)');
         const response = await axios.get(`${baseUrl}?${params.toString()}`, { headers });
-        
+
         console.log('[ALERT BADGE DEBUG] Full API response:', JSON.stringify(response?.data, null, 2));
         console.log('[ALERT BADGE DEBUG] Alert API response structure:', {
           hasPstreamSeriesData: !!response?.data?.pstream_series_data,
@@ -692,12 +692,12 @@ const TopologyGraph = () => {
           seriesLength: response?.data?.serviceResult?.data?.series?.length,
           responseKeys: Object.keys(response?.data || {})
         });
-        
+
         // Parse the response - use pstream_series_data instead of serviceResult.data.series
         const series = response?.data?.pstream_series_data || [];
         console.log('[ALERT BADGE DEBUG] Raw series data:', series.slice(0, 5));
         const counts = {};
-        
+
         series.forEach(item => {
           const nodeId = item.group?.[0];
           const count = item.values?.[0]?.value || 0;
@@ -706,7 +706,7 @@ const TopologyGraph = () => {
             counts[nodeId] = count;
           }
         });
-        
+
         console.log('[ALERT BADGE DEBUG] Setting alert counts state - counts:', counts, 'Keys:', Object.keys(counts), 'Total node IDs with alerts:', Object.keys(counts).length);
         setAlertCounts(counts);
         console.log('Alert counts fetched:', counts);
@@ -720,7 +720,7 @@ const TopologyGraph = () => {
     }
 
     fetchAlertCounts();
-    
+
     // Refresh alert counts every 60 seconds
     const interval = setInterval(fetchAlertCounts, 60000);
     return () => clearInterval(interval);
@@ -732,10 +732,10 @@ const TopologyGraph = () => {
       // Separate nodes and edges
       const allNodes = allElements.filter(elem => !elem.data.source && !elem.data.target);
       const allEdges = allElements.filter(elem => elem.data.source && elem.data.target);
-      
+
       // Filter nodes by search term or device family selection
       let filteredNodes = allNodes;
-      
+
       // Filter out unmanaged devices if checkbox is unchecked
       if (!showUnmanagedDevices) {
         filteredNodes = filteredNodes.filter(node => {
@@ -743,7 +743,7 @@ const TopologyGraph = () => {
           return !label.toUpperCase().includes('UNMANAGED');
         });
       }
-      
+
       // Filter by selected devices first
       if (selectedDevices.length > 0) {
         console.log('Filtering by selected devices:', selectedDevices.length, 'devices');
@@ -752,14 +752,14 @@ const TopologyGraph = () => {
         });
         console.log('After device filter:', filteredNodes.length, 'nodes remaining');
       }
-      
+
       // Then filter by device model (if not using device selection)
       if (selectedDevices.length === 0 && searchField === 'device_model' && selectedDevicemodels.length > 0) {
         filteredNodes = filteredNodes.filter(node => {
           return selectedDevicemodels.includes(node.data.device_model);
         });
       }
-      
+
       // Finally apply text search filter (works on top of other filters)
       if (searchTerm.trim() !== '') {
         console.log('Applying text search:', searchTerm, 'on field:', searchField);
@@ -778,24 +778,24 @@ const TopologyGraph = () => {
       let filteredEdges = allEdges.filter(edge => {
         const hasSource = filteredNodeIds.has(edge.data.source);
         const hasTarget = filteredNodeIds.has(edge.data.target);
-        
+
         // Both source and target must exist
         if (!hasSource || !hasTarget) return false;
-        
+
         // Filter by link type
         const linkType = edge.data.link_type;
         if (!linkType) return true;
         const upperLinkType = linkType.toUpperCase();
         return linkTypeFilters[upperLinkType] !== false;
       });
-      
+
       // Get node IDs that have at least one edge
       const connectedNodeIds = new Set();
       filteredEdges.forEach(edge => {
         connectedNodeIds.add(edge.data.source);
         connectedNodeIds.add(edge.data.target);
       });
-      
+
       // Keep only nodes that have at least one connection
       // BUT: If user explicitly selected devices, show them even without connections
       let finalNodes;
@@ -806,10 +806,17 @@ const TopologyGraph = () => {
         // For other filters, only show nodes with connections
         finalNodes = filteredNodes.filter(node => connectedNodeIds.has(node.data.id));
       }
-      
+
+      // Filter edges again to ensure both source and target exist in finalNodes
+      // This is a safety check to prevent "ghost edges" pointing to hidden nodes
+      const finalNodeIds = new Set(finalNodes.map(n => n.data.id));
+      const validEdges = filteredEdges.filter(edge =>
+        finalNodeIds.has(edge.data.source) && finalNodeIds.has(edge.data.target)
+      );
+
       // Combine nodes and edges
-      const finalElements = [...finalNodes, ...filteredEdges];
-      
+      const finalElements = [...finalNodes, ...validEdges];
+
       console.log('Final elements:', finalNodes.length, 'nodes,', filteredEdges.length, 'edges');
       setElements(finalElements);
     }
@@ -848,21 +855,21 @@ const TopologyGraph = () => {
     }
 
     // Add event handlers for highlighting neighbors on left click
-    cy.on('tap', 'node', function(evt) {
+    cy.on('tap', 'node', function (evt) {
       const node = evt.target;
-      
+
       // Clear previous selection
       cy.elements().removeClass('dimmed highlighted');
       setSelectedEdge(null);
       setContextMenu(null);
-      
+
       // Get neighbors and connected edges
       const neighborhood = node.neighborhood();
       const connectedEdges = node.connectedEdges();
-      
+
       // Dim all elements first
       cy.elements().addClass('dimmed');
-      
+
       // Highlight selected node, its neighbors, and connected edges
       node.removeClass('dimmed').addClass('highlighted');
       neighborhood.removeClass('dimmed').addClass('highlighted');
@@ -870,14 +877,14 @@ const TopologyGraph = () => {
     });
 
     // Add event handler for edge left clicks
-    cy.on('tap', 'edge', function(evt) {
+    cy.on('tap', 'edge', function (evt) {
       const edge = evt.target;
-      
+
       // Clear previous selection
       cy.elements().removeClass('dimmed highlighted');
       setSelectedNode(null);
       setContextMenu(null);
-      
+
       // Highlight the selected edge and its nodes
       cy.elements().addClass('dimmed');
       edge.removeClass('dimmed').addClass('highlighted');
@@ -886,7 +893,7 @@ const TopologyGraph = () => {
     });
 
     // Right-click context menu for nodes
-    cy.on('cxttap', 'node', function(evt) {
+    cy.on('cxttap', 'node', function (evt) {
       const node = evt.target;
       const renderedPosition = node.renderedPosition();
       setContextMenu({
@@ -897,7 +904,7 @@ const TopologyGraph = () => {
     });
 
     // Right-click context menu for edges
-    cy.on('cxttap', 'edge', function(evt) {
+    cy.on('cxttap', 'edge', function (evt) {
       const edge = evt.target;
       const midpoint = edge.midpoint();
       const pan = cy.pan();
@@ -905,15 +912,15 @@ const TopologyGraph = () => {
       setContextMenu({
         type: 'edge',
         data: edge.data(),
-        position: { 
-          x: midpoint.x * zoom + pan.x, 
-          y: midpoint.y * zoom + pan.y 
+        position: {
+          x: midpoint.x * zoom + pan.x,
+          y: midpoint.y * zoom + pan.y
         }
       });
     });
 
     // Reset when clicking on background
-    cy.on('tap', function(evt) {
+    cy.on('tap', function (evt) {
       if (evt.target === cy) {
         cy.elements().removeClass('dimmed highlighted');
         setSelectedNode(null);
@@ -941,12 +948,12 @@ const TopologyGraph = () => {
       console.log('[ALERT BADGE DEBUG] setupAlertBadges skipped - cy:', !!cy, 'alertCounts keys:', Object.keys(alertCounts).length);
       return;
     }
-    
+
     console.log('[ALERT BADGE DEBUG] setupAlertBadges starting - alertCounts:', alertCounts, 'alertCounts keys:', Object.keys(alertCounts), 'cy.nodes().length:', cy?.nodes()?.length);
-    
+
     const setupAlertBadges = () => {
       console.log('[ALERT BADGE DEBUG] setupAlertBadges executing - alertCounts:', alertCounts, 'total nodes:', cy.nodes().length);
-      
+
       // Clean up existing alert badges and their listeners
       document.querySelectorAll('.alert-badge').forEach(el => {
         if (el._alertHandlers && cy) {
@@ -958,22 +965,22 @@ const TopologyGraph = () => {
             if (el._alertHandlers.drag) {
               cy.off('drag', `node[id="${el._alertHandlers.nodeId}"]`, el._alertHandlers.drag);
             }
-          } catch(e) {
+          } catch (e) {
             console.warn('Error removing alert badge listeners:', e);
           }
         }
         el.remove();
       });
-      
+
       // Create new alert badges with proper event listeners
       let badgesCreated = 0;
       let badgesSkipped = 0;
       const nodeIPs = [];
-      
+
       cy.nodes().forEach(node => {
         const nodeId = node.id();
         const deviceIP = node.data('device_ip');
-        
+
         // Match alerts by node_id (a_en_node_id) instead of device_ip (a_asset_ip_address)
         // Try both the nodeId as-is and with _CHASSIS suffix to match API format
         let alertCount = alertCounts[nodeId];
@@ -985,19 +992,19 @@ const TopologyGraph = () => {
             console.log(`[ALERT BADGE DEBUG] Matched alert using IP_CHASSIS format: ${nodeId} -> ${nodeIdWithSuffix}, count: ${alertCount}`);
           }
         }
-        
+
         nodeIPs.push({ nodeId: nodeId, device_ip: deviceIP, alertCount: alertCount, lookupKey: alertCount ? (alertCounts[nodeId] ? nodeId : `${deviceIP}_CHASSIS`) : nodeId });
-        
+
         if (alertCount && alertCount > 0) {
           badgesCreated++;
           const badge = document.createElement('div');
           badge.className = 'alert-badge';
           badge.setAttribute('data-node-id', nodeId);
           badge.textContent = alertCount > 99 ? '99+' : alertCount;
-          
+
           const badgeSize = alertCount > 99 ? '28px' : (alertCount > 9 ? '24px' : '20px');
           const fontSize = alertCount > 99 ? '9px' : '10px';
-          
+
           badge.style.cssText = `
             position: absolute;
             background: #F44336;
@@ -1017,25 +1024,25 @@ const TopologyGraph = () => {
             border: 2px solid white;
             line-height: 1;
           `;
-          
+
           document.body.appendChild(badge);
-          
+
           // Update function that gets fresh node reference
           const updateBadgePosition = () => {
             // Get fresh node reference from Cytoscape instance to avoid stale references
             const node = cy.getElementById(nodeId);
             if (!node || node.length === 0) return;
-            
+
             try {
               const pos = node.renderedPosition();
               const badgeSizeNum = parseInt(badgeSize);
               const halfBadge = badgeSizeNum / 2;
               const badgeCenterX = pos.x + 15;
               const badgeCenterY = pos.y - 15;
-              
+
               badge.style.left = `${badgeCenterX - halfBadge}px`;
               badge.style.top = `${badgeCenterY - halfBadge}px`;
-              
+
               // Check for popups and adjust z-index dynamically
               const allDivs = document.querySelectorAll('div[style*="position: absolute"], div[style*="position: fixed"]');
               const hasPopups = Array.from(allDivs).some(el => {
@@ -1043,26 +1050,26 @@ const TopologyGraph = () => {
                 const zIndex = parseInt(window.getComputedStyle(el).zIndex) || 0;
                 return zIndex > 800;
               });
-              
+
               badge.style.zIndex = hasPopups ? '799' : '1000';
-            } catch(e) {
+            } catch (e) {
               console.warn('Error updating alert badge position:', e);
             }
           };
-          
+
           // Initial position update
           updateBadgePosition();
-          
+
           // Event handlers
           const panZoomHandler = () => updateBadgePosition();
           const positionHandler = () => updateBadgePosition();
           const dragHandler = () => updateBadgePosition();
-          
+
           // Attach event listeners
           cy.on('pan zoom', panZoomHandler);
           cy.on('position', `node[id="${nodeId}"]`, positionHandler);
           cy.on('drag', `node[id="${nodeId}"]`, dragHandler);
-          
+
           // Store handlers for cleanup
           badge._alertHandlers = {
             panZoom: panZoomHandler,
@@ -1074,15 +1081,15 @@ const TopologyGraph = () => {
           badgesSkipped++;
         }
       });
-      
+
       console.log('[ALERT BADGE DEBUG] Badge creation complete - Created:', badgesCreated, 'Skipped:', badgesSkipped, 'Total nodes:', nodeIPs.length);
       console.log('[ALERT BADGE DEBUG] Node IDs vs Alert Counts:', nodeIPs.slice(0, 10), 'alertCounts keys (node IDs):', Object.keys(alertCounts).slice(0, 10));
       console.log('[ALERT BADGE DEBUG] Sample node data:', nodeIPs.filter(n => n.alertCount > 0).slice(0, 5));
     };
-    
+
     // Use a slightly longer timeout to ensure DOM and Cytoscape are ready after detail panel toggle
     const timeoutId = setTimeout(setupAlertBadges, 50);
-    
+
     // Cleanup
     return () => {
       clearTimeout(timeoutId);
@@ -1096,7 +1103,7 @@ const TopologyGraph = () => {
             if (el._alertHandlers.drag) {
               cy.off('drag', `node[id="${el._alertHandlers.nodeId}"]`, el._alertHandlers.drag);
             }
-          } catch(e) {
+          } catch (e) {
             console.warn('Error removing alert badge listeners:', e);
           }
         }
@@ -1122,15 +1129,15 @@ const TopologyGraph = () => {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [showViewsMenu]);
 
-//   const elements = [
-//     { data: { id: 'one', label: 'Node 1' } },
-//     { data: { id: 'two', label: 'Node 2' } },
-//     { data: { id: 'edge1', source: 'one', target: 'two' } }
-//   ];
+  //   const elements = [
+  //     { data: { id: 'one', label: 'Node 1' } },
+  //     { data: { id: 'two', label: 'Node 2' } },
+  //     { data: { id: 'edge1', source: 'one', target: 'two' } }
+  //   ];
 
   // Get router icon path based on environment
-  const routerIconPath = import.meta.env.DEV 
-    ? '/router.png' 
+  const routerIconPath = import.meta.env.DEV
+    ? '/router.png'
     : '/assets/img/icons/blue_outline/router.png';
 
   const stylesheet = [
@@ -1267,7 +1274,7 @@ const TopologyGraph = () => {
   const getNodeLayer = (node) => {
     const label = node.data('label') || '';
     const labelUpper = label.toUpperCase();
-    
+
     if (labelUpper.includes('CORE')) {
       return 3; // Innermost layer (highest value)
     } else if (labelUpper.includes('PE')) {
@@ -1287,7 +1294,7 @@ const TopologyGraph = () => {
       animate: false
     };
 
-    switch(type) {
+    switch (type) {
       case 'network-hierarchy':
         return {
           ...baseConfig,
@@ -1399,7 +1406,7 @@ const TopologyGraph = () => {
           console.warn('Error stopping previous layout:', e);
         }
       }
-      
+
       // Re-run the current layout
       try {
         const layoutConfig = getLayoutConfig(layoutType);
@@ -1449,7 +1456,7 @@ const TopologyGraph = () => {
     setSelectedNode(null);
     setSelectedEdge(null);
     setContextMenu(null);
-    
+
     // Clear highlighting
     if (cy) {
       cy.elements().removeClass('dimmed highlighted');
@@ -1482,34 +1489,34 @@ const TopologyGraph = () => {
       `}</style>
       {/* Toggle Control Panel Button */}
       {(contextMenu || selectedNode || selectedEdge || showFilterHelp || showDevicePopup) ? null : (
-      <button
-        onClick={() => setShowControlPanel(!showControlPanel)}
-        title={showControlPanel ? "Hide Control Panel" : "Show Control Panel"}
-        style={{
-          position: 'absolute',
-          top: '20px',
-          left: showControlPanel ? '320px' : '20px',
-          width: '44px',
-          height: '44px',
-          padding: '0',
-          background: 'var(--primary)',
-          color: 'var(--text)',
-          border: 'none',
-          borderRadius: '4px',
-          cursor: 'pointer',
-          fontSize: '16px',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 1001,
-          boxShadow: 'var(--elevation-2)',
-          transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)'
-        }}
-        onMouseEnter={(e) => e.target.style.background = 'var(--accent-hover)'}
-        onMouseLeave={(e) => e.target.style.background = 'var(--primary)'}
-      >
-        {showControlPanel ? '◀' : '▶'}
-      </button>
+        <button
+          onClick={() => setShowControlPanel(!showControlPanel)}
+          title={showControlPanel ? "Hide Control Panel" : "Show Control Panel"}
+          style={{
+            position: 'absolute',
+            top: '20px',
+            left: showControlPanel ? '320px' : '20px',
+            width: '44px',
+            height: '44px',
+            padding: '0',
+            background: 'var(--primary)',
+            color: 'var(--text)',
+            border: 'none',
+            borderRadius: '4px',
+            cursor: 'pointer',
+            fontSize: '16px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1001,
+            boxShadow: 'var(--elevation-2)',
+            transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)'
+          }}
+          onMouseEnter={(e) => e.target.style.background = 'var(--accent-hover)'}
+          onMouseLeave={(e) => e.target.style.background = 'var(--primary)'}
+        >
+          {showControlPanel ? '◀' : '▶'}
+        </button>
       )}
 
       {/* Left Side Panel */}
@@ -1528,148 +1535,173 @@ const TopologyGraph = () => {
           overflowX: 'visible',
           paddingRight: '5px'
         }}>
-        {/* Control Panel - Compact */}
-        <div style={{
-          background: 'var(--card)',
-          border: '1px solid var(--border)',
-          borderRadius: '8px',
-          padding: '10px',
-          boxShadow: 'var(--elevation-2)'
-        }}>
-          {/* Action Buttons Row */}
-          <div style={{ display: 'flex', gap: '6px', marginBottom: '8px', flexWrap: 'wrap' }}>
-            <button onClick={handleZoomIn} title="Zoom In" className="action-btn"
-              style={{ width: '44px', height: '44px', padding: '0', background: 'var(--primary)', color: 'var(--text)', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)' }}
-              onMouseEnter={(e) => e.target.style.background = 'var(--accent-hover)'}
-              onMouseLeave={(e) => e.target.style.background = 'var(--primary)'}>
-              <SearchPlusIcon />
-            </button>
-            <button onClick={handleZoomOut} title="Zoom Out" className="action-btn"
-              style={{ width: '44px', height: '44px', padding: '0', background: 'var(--primary)', color: 'var(--text)', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)' }}
-              onMouseEnter={(e) => e.target.style.background = 'var(--accent-hover)'}
-              onMouseLeave={(e) => e.target.style.background = 'var(--primary)'}>
-              <SearchMinusIcon />
-            </button>
-            <button onClick={handleFitToWindow} title="Fit to Window" className="action-btn"
-              style={{ width: '44px', height: '44px', padding: '0', background: 'var(--primary)', color: 'var(--text)', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)' }}
-              onMouseEnter={(e) => e.target.style.background = 'var(--accent-hover)'}
-              onMouseLeave={(e) => e.target.style.background = 'var(--primary)'}>
-              <ExpandIcon />
-            </button>
-            <button onClick={handleReload} title="Redraw Layout" className="action-btn"
-              style={{ width: '44px', height: '44px', padding: '0', background: 'var(--primary)', color: 'var(--text)', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)' }}
-              onMouseEnter={(e) => e.target.style.background = 'var(--accent-hover)'}
-              onMouseLeave={(e) => e.target.style.background = 'var(--primary)'}>
-              <SyncAltIcon />
-            </button>
-            <button onClick={handleResetAll} title="Reset All" className="action-btn"
-              style={{ width: '44px', height: '44px', padding: '0', background: 'var(--error)', color: 'var(--text)', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)' }}
-              onMouseEnter={(e) => e.target.style.background = 'var(--red)'}
-              onMouseLeave={(e) => e.target.style.background = 'var(--error)'}>
-              <UndoIcon />
-            </button>
-          </div>
-          
-          {/* Layout Selector */}
-          <select value={layoutType} onChange={(e) => setLayoutType(e.target.value)} className="sort-select"
-            style={{ width: '100%', padding: '6px', fontSize: '11px' }}>
-            <optgroup label="Network Layouts">
-              <option value="network-hierarchy">Network Hierarchy</option>
-            </optgroup>
-            <optgroup label="Standard Layouts">
-              <option value="breadthfirst-circle">Breadthfirst (Circular)</option>
-              <option value="breadthfirst-linear">Breadthfirst (Linear)</option>
-              <option value="concentric">Concentric (By Degree)</option>
-              <option value="circle">Circle</option>
-              <option value="grid">Grid</option>
-              <option value="cose">Force-Directed (COSE)</option>
-            </optgroup>
-          </select>
-        </div>
-
-        {/* Summary & Display Options - Compact */}
-        <div style={{
-          background: 'var(--card)',
-          border: '1px solid var(--border)',
-          borderRadius: '8px',
-          padding: '10px',
-          boxShadow: 'var(--elevation-2)'
-        }}>
-          {/* Summary Stats - Compact Grid */}
+          {/* Control Panel - Compact */}
           <div style={{
-            display: 'grid',
-            gridTemplateColumns: '1fr 1fr',
-            gap: '6px',
-            fontSize: '10px',
-            color: 'var(--text)',
-            marginBottom: '8px'
+            background: 'var(--card)',
+            border: '1px solid var(--border)',
+            borderRadius: '8px',
+            padding: '10px',
+            boxShadow: 'var(--elevation-2)'
           }}>
-            <div style={{ background: 'var(--accent-light)', padding: '4px 6px', borderRadius: '3px' }}>
-              <div>Total: <strong>{allElements.filter(e => !e.data.source && !e.data.target).length}</strong> nodes</div>
+            {/* Action Buttons Row */}
+            <div style={{ display: 'flex', gap: '6px', marginBottom: '8px', flexWrap: 'wrap' }}>
+              <button onClick={handleZoomIn} title="Zoom In" className="action-btn"
+                style={{ width: '44px', height: '44px', padding: '0', background: 'var(--primary)', color: 'var(--text)', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)' }}
+                onMouseEnter={(e) => e.target.style.background = 'var(--accent-hover)'}
+                onMouseLeave={(e) => e.target.style.background = 'var(--primary)'}>
+                <SearchPlusIcon />
+              </button>
+              <button onClick={handleZoomOut} title="Zoom Out" className="action-btn"
+                style={{ width: '44px', height: '44px', padding: '0', background: 'var(--primary)', color: 'var(--text)', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)' }}
+                onMouseEnter={(e) => e.target.style.background = 'var(--accent-hover)'}
+                onMouseLeave={(e) => e.target.style.background = 'var(--primary)'}>
+                <SearchMinusIcon />
+              </button>
+              <button onClick={handleFitToWindow} title="Fit to Window" className="action-btn"
+                style={{ width: '44px', height: '44px', padding: '0', background: 'var(--primary)', color: 'var(--text)', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)' }}
+                onMouseEnter={(e) => e.target.style.background = 'var(--accent-hover)'}
+                onMouseLeave={(e) => e.target.style.background = 'var(--primary)'}>
+                <ExpandIcon />
+              </button>
+              <button onClick={handleReload} title="Redraw Layout" className="action-btn"
+                style={{ width: '44px', height: '44px', padding: '0', background: 'var(--primary)', color: 'var(--text)', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)' }}
+                onMouseEnter={(e) => e.target.style.background = 'var(--accent-hover)'}
+                onMouseLeave={(e) => e.target.style.background = 'var(--primary)'}>
+                <SyncAltIcon />
+              </button>
+              <button onClick={handleResetAll} title="Reset All" className="action-btn"
+                style={{ width: '44px', height: '44px', padding: '0', background: 'var(--error)', color: 'var(--text)', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)' }}
+                onMouseEnter={(e) => e.target.style.background = 'var(--red)'}
+                onMouseLeave={(e) => e.target.style.background = 'var(--error)'}>
+                <UndoIcon />
+              </button>
             </div>
-            <div style={{ background: 'var(--accent-light)', padding: '4px 6px', borderRadius: '3px' }}>
-              <div>Total: <strong>{allElements.filter(e => e.data.source && e.data.target).length}</strong> edges</div>
-            </div>
-            <div style={{ background: 'var(--accent-light)', padding: '4px 6px', borderRadius: '3px' }}>
-              <div>Visible: <strong>{elements.filter(e => !e.data.source && !e.data.target).length}</strong> nodes</div>
-            </div>
-            <div style={{ background: 'var(--accent-light)', padding: '4px 6px', borderRadius: '3px' }}>
-              <div>Visible: <strong>{elements.filter(e => e.data.source && e.data.target).length}</strong> edges</div>
-            </div>
-          </div>
-          
-          {/* Display Options - Horizontal */}
-          <div style={{ display: 'flex', gap: '12px', fontSize: '11px' }}>
-            <label style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }}>
-              <input type="radio" name="labelDisplayMode" value="hostname" checked={labelDisplayMode === 'hostname'}
-                onChange={(e) => setLabelDisplayMode(e.target.value)} style={{ cursor: 'pointer' }} />
-              <span>Hostname</span>
-            </label>
-            <label style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }}>
-              <input type="radio" name="labelDisplayMode" value="ip" checked={labelDisplayMode === 'ip'}
-                onChange={(e) => setLabelDisplayMode(e.target.value)} style={{ cursor: 'pointer' }} />
-              <span>IP</span>
-            </label>
-          </div>
-        </div>
 
-        {/* Search/Filter by Node */}
-        <div style={{
-          background: 'var(--card)',
-          border: '1px solid var(--border)',
-          borderRadius: '8px',
-          padding: '10px',
-          boxShadow: 'var(--elevation-2)'
-        }}>
-          <div style={{ 
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            marginBottom: '8px'
+            {/* Layout Selector */}
+            <select value={layoutType} onChange={(e) => setLayoutType(e.target.value)} className="sort-select"
+              style={{ width: '100%', padding: '6px', fontSize: '11px' }}>
+              <optgroup label="Network Layouts">
+                <option value="network-hierarchy">Network Hierarchy</option>
+              </optgroup>
+              <optgroup label="Standard Layouts">
+                <option value="breadthfirst-circle">Breadthfirst (Circular)</option>
+                <option value="breadthfirst-linear">Breadthfirst (Linear)</option>
+                <option value="concentric">Concentric (By Degree)</option>
+                <option value="circle">Circle</option>
+                <option value="grid">Grid</option>
+                <option value="cose">Force-Directed (COSE)</option>
+              </optgroup>
+            </select>
+          </div>
+
+          {/* Summary & Display Options - Compact */}
+          <div style={{
+            background: 'var(--card)',
+            border: '1px solid var(--border)',
+            borderRadius: '8px',
+            padding: '10px',
+            boxShadow: 'var(--elevation-2)'
           }}>
-            <div style={{ 
-              fontWeight: 'bold', 
-              fontSize: '12px', 
-              color: 'var(--primary)'
+            {/* Summary Stats - Compact Grid */}
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: '1fr 1fr',
+              gap: '6px',
+              fontSize: '10px',
+              color: 'var(--text)',
+              marginBottom: '8px'
             }}>
-              Filter Devices
+              <div style={{ background: 'var(--accent-light)', padding: '4px 6px', borderRadius: '3px' }}>
+                <div>Total: <strong>{allElements.filter(e => !e.data.source && !e.data.target).length}</strong> nodes</div>
+              </div>
+              <div style={{ background: 'var(--accent-light)', padding: '4px 6px', borderRadius: '3px' }}>
+                <div>Total: <strong>{allElements.filter(e => e.data.source && e.data.target).length}</strong> edges</div>
+              </div>
+              <div style={{ background: 'var(--accent-light)', padding: '4px 6px', borderRadius: '3px' }}>
+                <div>Visible: <strong>{elements.filter(e => !e.data.source && !e.data.target).length}</strong> nodes</div>
+              </div>
+              <div style={{ background: 'var(--accent-light)', padding: '4px 6px', borderRadius: '3px' }}>
+                <div>Visible: <strong>{elements.filter(e => e.data.source && e.data.target).length}</strong> edges</div>
+              </div>
             </div>
-            <div style={{ display: 'flex', gap: '6px' }}>
-              {(selectedDevices.length > 0 || searchTerm.trim() !== '' || selectedDevicemodels.length > 0) && (
+
+            {/* Display Options - Horizontal */}
+            <div style={{ display: 'flex', gap: '12px', fontSize: '11px' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }}>
+                <input type="radio" name="labelDisplayMode" value="hostname" checked={labelDisplayMode === 'hostname'}
+                  onChange={(e) => setLabelDisplayMode(e.target.value)} style={{ cursor: 'pointer' }} />
+                <span>Hostname</span>
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }}>
+                <input type="radio" name="labelDisplayMode" value="ip" checked={labelDisplayMode === 'ip'}
+                  onChange={(e) => setLabelDisplayMode(e.target.value)} style={{ cursor: 'pointer' }} />
+                <span>IP</span>
+              </label>
+            </div>
+          </div>
+
+          {/* Search/Filter by Node */}
+          <div style={{
+            background: 'var(--card)',
+            border: '1px solid var(--border)',
+            borderRadius: '8px',
+            padding: '10px',
+            boxShadow: 'var(--elevation-2)'
+          }}>
+            <div style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              marginBottom: '8px'
+            }}>
+              <div style={{
+                fontWeight: 'bold',
+                fontSize: '12px',
+                color: 'var(--primary)'
+              }}>
+                Filter Devices
+              </div>
+              <div style={{ display: 'flex', gap: '6px' }}>
+                {(selectedDevices.length > 0 || searchTerm.trim() !== '' || selectedDevicemodels.length > 0) && (
+                  <button
+                    onClick={() => {
+                      setSelectedDevices([]);
+                      setPendingFilterDevices([]);
+                      setSearchTerm('');
+                      setSelectedDevicemodels([]);
+                    }}
+                    className="action-btn"
+                    title="Clear all filters and show all devices"
+                    style={{
+                      width: '44px',
+                      height: '44px',
+                      padding: '0',
+                      background: 'var(--error)',
+                      color: 'var(--text)',
+                      border: 'none',
+                      borderRadius: '4px',
+                      cursor: 'pointer',
+                      fontSize: '12px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)'
+                    }}
+                    onMouseEnter={(e) => e.target.style.background = 'var(--red)'}
+                    onMouseLeave={(e) => e.target.style.background = 'var(--error)'}
+                  >
+                    <FilterCircleXmarkIcon />
+                  </button>
+                )}
                 <button
-                  onClick={() => {
-                    setSelectedDevices([]);
-                    setPendingFilterDevices([]);
-                    setSearchTerm('');
-                    setSelectedDevicemodels([]);
-                  }}
+                  onClick={() => setShowDevicePopup(true)}
                   className="action-btn"
-                  title="Clear all filters and show all devices"
+                  title="Open device selection table"
                   style={{
                     width: '44px',
                     height: '44px',
                     padding: '0',
-                    background: 'var(--error)',
+                    background: 'var(--primary)',
                     color: 'var(--text)',
                     border: 'none',
                     borderRadius: '4px',
@@ -1680,67 +1712,42 @@ const TopologyGraph = () => {
                     justifyContent: 'center',
                     transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)'
                   }}
-                  onMouseEnter={(e) => e.target.style.background = 'var(--red)'}
-                  onMouseLeave={(e) => e.target.style.background = 'var(--error)'}
+                  onMouseEnter={(e) => e.target.style.background = 'var(--accent-hover)'}
+                  onMouseLeave={(e) => e.target.style.background = 'var(--primary)'}
                 >
-                  <FilterCircleXmarkIcon />
+                  <FilterIcon />
                 </button>
-              )}
-              <button
-                onClick={() => setShowDevicePopup(true)}
-                className="action-btn"
-                title="Open device selection table"
-                style={{
-                  width: '44px',
-                  height: '44px',
-                  padding: '0',
-                  background: 'var(--primary)',
-                  color: 'var(--text)',
-                  border: 'none',
-                  borderRadius: '4px',
-                  cursor: 'pointer',
-                  fontSize: '12px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)'
-                }}
-                onMouseEnter={(e) => e.target.style.background = 'var(--accent-hover)'}
-                onMouseLeave={(e) => e.target.style.background = 'var(--primary)'}
-              >
-                <FilterIcon />
-              </button>
-              <button
-                onClick={() => setShowFilterHelp(true)}
-                className="action-btn"
-                title="Show how to filter"
-                style={{
-                  width: '44px',
-                  height: '44px',
-                  padding: '0',
-                  background: 'var(--cfx3rdlevel)',
-                  color: 'var(--primary)',
-                  border: '1px solid var(--border)',
-                  borderRadius: '4px',
-                  cursor: 'pointer',
-                  fontSize: '14px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)'
-                }}
-                onMouseEnter={(e) => {
-                  e.target.style.background = 'var(--primary)';
-                  e.target.style.color = 'var(--text)';
-                }}
-                onMouseLeave={(e) => {
-                  e.target.style.background = 'var(--cfx3rdlevel)';
-                  e.target.style.color = 'var(--primary)';
-                }}
-              >
-                <InfoCircleIcon />
-              </button>
-              {/* Save and Load Views buttons - temporarily disabled
+                <button
+                  onClick={() => setShowFilterHelp(true)}
+                  className="action-btn"
+                  title="Show how to filter"
+                  style={{
+                    width: '44px',
+                    height: '44px',
+                    padding: '0',
+                    background: 'var(--cfx3rdlevel)',
+                    color: 'var(--primary)',
+                    border: '1px solid var(--border)',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    fontSize: '14px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.target.style.background = 'var(--primary)';
+                    e.target.style.color = 'var(--text)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.target.style.background = 'var(--cfx3rdlevel)';
+                    e.target.style.color = 'var(--primary)';
+                  }}
+                >
+                  <InfoCircleIcon />
+                </button>
+                {/* Save and Load Views buttons - temporarily disabled
               <button
                 onClick={() => setShowSaveViewDialog(true)}
                 className="action-btn"
@@ -1890,402 +1897,402 @@ const TopologyGraph = () => {
                 )}
               </div>
               */}
-            </div>
-          </div>
-          
-          {/* Filter Status */}
-          {(selectedDevices.length > 0 || searchTerm.trim() !== '' || selectedDevicemodels.length > 0) && (
-            <div style={{
-              background: 'var(--accent-light)',
-              border: '1px solid var(--accent-border)',
-              borderRadius: '4px',
-              padding: '8px',
-              marginBottom: '10px',
-              fontSize: '11px',
-              color: 'var(--text)'
-            }}>
-              <div style={{ fontWeight: 'bold', marginBottom: '4px', color: 'var(--primary)' }}>
-                Active Filters:
               </div>
-              {selectedDevices.length > 0 && (
-                <div style={{ marginBottom: '4px' }}>
-                  <div style={{ fontWeight: '600' }}>
-                    • {selectedDevices.length} device{selectedDevices.length !== 1 ? 's' : ''} selected
-                  </div>
-                  <div style={{ 
-                    fontSize: '10px', 
-                    color: 'var(--text-secondary)', 
-                    marginLeft: '12px',
-                    marginTop: '2px',
-                    fontStyle: 'italic'
-                  }}>
-                    {(() => {
-                      const deviceNames = selectedDevices
-                        .map(id => {
-                          const device = allDevices.find(d => d.id === id);
-                          return device ? (device.label || device.hostname || device.id) : id;
-                        })
-                        .slice(0, 5);
-                      
-                      const displayText = deviceNames.join(', ');
-                      return selectedDevices.length > 5 
-                        ? `${displayText}, ... (+${selectedDevices.length - 5} more)`
-                        : displayText;
-                    })()}
-                  </div>
-                </div>
-              )}
-              {searchTerm.trim() !== '' && (
-                <div>• Text search: "{searchTerm}"</div>
-              )}
-              {selectedDevicemodels.length > 0 && (
-                <div>• {selectedDevicemodels.length} device model{selectedDevicemodels.length !== 1 ? 's' : ''}</div>
-              )}
             </div>
-          )}
-          
-          <div style={{ marginBottom: '10px' }}>
-            <select
-              value={searchField}
-              onChange={(e) => {
-                setSearchField(e.target.value);
-                setSearchTerm('');
-                setSelectedDevicemodels([]);
-              }}
-              className="sort-select"
-              style={{
-                width: '100%',
-                padding: '8px',
-                fontSize: '12px'
-              }}
-            >
-              <option value="label">Label</option>
-              <option value="device_model">Device Family</option>
-              <option value="device_ip">Device IP</option>
-            </select>
-          </div>
-          
-          {searchField === 'device_model' ? (
-            <div>
-              <div style={{ 
-                maxHeight: '200px', 
-                overflowY: 'auto',
-                border: '1px solid var(--border)',
+
+            {/* Filter Status */}
+            {(selectedDevices.length > 0 || searchTerm.trim() !== '' || selectedDevicemodels.length > 0) && (
+              <div style={{
+                background: 'var(--accent-light)',
+                border: '1px solid var(--accent-border)',
                 borderRadius: '4px',
                 padding: '8px',
-                background: 'var(--cfx3rdlevel)'
+                marginBottom: '10px',
+                fontSize: '11px',
+                color: 'var(--text)'
               }}>
-                {devicemodels.length > 0 ? (
-                  devicemodels.map(family => (
-                    <label 
-                      key={family} 
-                      style={{ 
-                        display: 'flex', 
-                        alignItems: 'center', 
-                        justifyContent: 'space-between',
-                        gap: '8px', 
-                        cursor: 'pointer',
-                        padding: '4px',
-                        fontSize: '12px'
-                      }}
-                    >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1 }}>
-                        <input
-                          type="checkbox"
-                          checked={selectedDevicemodels.includes(family)}
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              setSelectedDevicemodels([...selectedDevicemodels, family]);
-                            } else {
-                              setSelectedDevicemodels(selectedDevicemodels.filter(f => f !== family));
-                            }
-                          }}
-                          style={{ cursor: 'pointer' }}
-                        />
-                        <span style={{ flex: 1 }}>{family}</span>
-                      </div>
-                      <span style={{ 
-                        background: 'var(--primary)', 
-                        color: 'var(--text)', 
-                        padding: '2px 6px', 
-                        borderRadius: '10px',
-                        fontSize: '10px',
-                        fontWeight: 'bold',
-                        minWidth: '25px',
-                        textAlign: 'center'
-                      }}>
-                        {deviceModelCounts[family] || 0}
-                      </span>
-                    </label>
-                  ))
-                ) : (
-                  <div style={{ fontSize: '12px', color: 'var(--text-muted)', textAlign: 'center', padding: '10px' }}>
-                    No device models found
+                <div style={{ fontWeight: 'bold', marginBottom: '4px', color: 'var(--primary)' }}>
+                  Active Filters:
+                </div>
+                {selectedDevices.length > 0 && (
+                  <div style={{ marginBottom: '4px' }}>
+                    <div style={{ fontWeight: '600' }}>
+                      • {selectedDevices.length} device{selectedDevices.length !== 1 ? 's' : ''} selected
+                    </div>
+                    <div style={{
+                      fontSize: '10px',
+                      color: 'var(--text-secondary)',
+                      marginLeft: '12px',
+                      marginTop: '2px',
+                      fontStyle: 'italic'
+                    }}>
+                      {(() => {
+                        const deviceNames = selectedDevices
+                          .map(id => {
+                            const device = allDevices.find(d => d.id === id);
+                            return device ? (device.label || device.hostname || device.id) : id;
+                          })
+                          .slice(0, 5);
+
+                        const displayText = deviceNames.join(', ');
+                        return selectedDevices.length > 5
+                          ? `${displayText}, ... (+${selectedDevices.length - 5} more)`
+                          : displayText;
+                      })()}
+                    </div>
                   </div>
                 )}
+                {searchTerm.trim() !== '' && (
+                  <div>• Text search: "{searchTerm}"</div>
+                )}
+                {selectedDevicemodels.length > 0 && (
+                  <div>• {selectedDevicemodels.length} device model{selectedDevicemodels.length !== 1 ? 's' : ''}</div>
+                )}
               </div>
-              {selectedDevicemodels.length > 0 && (
-                <button
-                  onClick={() => setSelectedDevicemodels([])}
-                  className="action-btn"
-                  style={{
-                    marginTop: '8px',
-                    width: '100%',
-                    padding: '6px',
-                    background: 'var(--cfx3rdlevel)',
-                    border: '1px solid var(--border)',
-                    borderRadius: '4px',
-                    cursor: 'pointer',
-                    fontSize: '11px',
-                    color: 'var(--text-secondary)'
-                  }}
-                >
-                  Clear Selection ({selectedDevicemodels.length} selected)
-                </button>
-              )}
-            </div>
-          ) : (
-            <div style={{ position: 'relative' }}>
-              <input
-                type="text"
-                placeholder={`Search by ${searchField}...`}
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="search-input"
+            )}
+
+            <div style={{ marginBottom: '10px' }}>
+              <select
+                value={searchField}
+                onChange={(e) => {
+                  setSearchField(e.target.value);
+                  setSearchTerm('');
+                  setSelectedDevicemodels([]);
+                }}
+                className="sort-select"
                 style={{
                   width: '100%',
-                  padding: '8px 30px 8px 8px',
-                  fontSize: '12px',
-                  boxSizing: 'border-box'
-                }}
-              />
-              {searchTerm && (
-                <button
-                  onClick={() => setSearchTerm('')}
-                  style={{
-                    position: 'absolute',
-                    right: '5px',
-                    top: '50%',
-                    transform: 'translateY(-50%)',
-                    background: 'none',
-                    border: 'none',
-                    cursor: 'pointer',
-                    color: 'var(--text-muted)',
-                    fontSize: '14px',
-                    padding: '0 5px'
-                  }}
-                  title="Clear search"
-                >
-                  <TimesIcon />
-                </button>
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* Device Filters */}
-        <div style={{
-          background: 'var(--card)',
-          border: '1px solid var(--border)',
-          borderRadius: '8px',
-          padding: '10px',
-          boxShadow: 'var(--elevation-2)'
-        }}>
-          <div style={{ 
-            fontWeight: 'bold', 
-            fontSize: '12px', 
-            marginBottom: '6px',
-            color: 'var(--primary)'
-          }}>
-            Device Filters
-          </div>
-          
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
-              <input
-                type="checkbox"
-                checked={showUnmanagedDevices}
-                onChange={(e) => setShowUnmanagedDevices(e.target.checked)}
-                style={{ cursor: 'pointer' }}
-              />
-              <span style={{ fontSize: '12px' }}>Show Unmanaged Devices</span>
-            </label>
-          </div>
-        </div>
-
-        {/* Pending Filter Devices */}
-        {pendingFilterDevices.length > 0 && (
-          <div style={{
-            background: 'var(--card)',
-            border: '2px solid var(--primary)',
-            borderRadius: '8px',
-            padding: '10px',
-            boxShadow: 'var(--elevation-4)'
-          }}>
-            <div style={{ 
-              fontWeight: 'bold', 
-              fontSize: '12px', 
-              marginBottom: '8px',
-              color: 'var(--primary)',
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center'
-            }}>
-              <span>📋 Devices to Filter ({pendingFilterDevices.length})</span>
-              <button
-                onClick={() => setPendingFilterDevices([])}
-                title="Clear all pending devices"
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  cursor: 'pointer',
-                  color: 'var(--error)',
-                  fontSize: '16px',
-                  padding: '0',
-                  display: 'flex',
-                  alignItems: 'center'
+                  padding: '8px',
+                  fontSize: '12px'
                 }}
               >
-                <TimesIcon />
-              </button>
+                <option value="label">Label</option>
+                <option value="device_model">Device Family</option>
+                <option value="device_ip">Device IP</option>
+              </select>
             </div>
-            
-            <div style={{
-              fontSize: '10px',
-              color: 'var(--text-secondary)',
-              marginBottom: '8px',
-              fontStyle: 'italic'
-            }}>
-              Right-click devices in the graph to add them here
-            </div>
-            
-            {/* Device List */}
-            <div style={{
-              maxHeight: '200px',
-              overflowY: 'auto',
-              marginBottom: '10px',
-              border: '1px solid var(--border)',
-              borderRadius: '4px',
-              background: 'var(--cfx3rdlevel)'
-            }}>
-              {pendingFilterDevices.map((device, idx) => (
-                <div
-                  key={device.id}
-                  style={{
-                    padding: '8px',
-                    borderBottom: idx < pendingFilterDevices.length - 1 ? '1px solid var(--border)' : 'none',
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    fontSize: '11px',
-                    background: idx % 2 === 0 ? 'var(--cfx3rdlevel)' : 'var(--card)'
-                  }}
-                >
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ 
-                      fontWeight: '600', 
-                      color: 'var(--text)',
-                      whiteSpace: 'nowrap',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis'
-                    }}>
-                      {device.label || device.hostname || device.id}
+
+            {searchField === 'device_model' ? (
+              <div>
+                <div style={{
+                  maxHeight: '200px',
+                  overflowY: 'auto',
+                  border: '1px solid var(--border)',
+                  borderRadius: '4px',
+                  padding: '8px',
+                  background: 'var(--cfx3rdlevel)'
+                }}>
+                  {devicemodels.length > 0 ? (
+                    devicemodels.map(family => (
+                      <label
+                        key={family}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          gap: '8px',
+                          cursor: 'pointer',
+                          padding: '4px',
+                          fontSize: '12px'
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1 }}>
+                          <input
+                            type="checkbox"
+                            checked={selectedDevicemodels.includes(family)}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setSelectedDevicemodels([...selectedDevicemodels, family]);
+                              } else {
+                                setSelectedDevicemodels(selectedDevicemodels.filter(f => f !== family));
+                              }
+                            }}
+                            style={{ cursor: 'pointer' }}
+                          />
+                          <span style={{ flex: 1 }}>{family}</span>
+                        </div>
+                        <span style={{
+                          background: 'var(--primary)',
+                          color: 'var(--text)',
+                          padding: '2px 6px',
+                          borderRadius: '10px',
+                          fontSize: '10px',
+                          fontWeight: 'bold',
+                          minWidth: '25px',
+                          textAlign: 'center'
+                        }}>
+                          {deviceModelCounts[family] || 0}
+                        </span>
+                      </label>
+                    ))
+                  ) : (
+                    <div style={{ fontSize: '12px', color: 'var(--text-muted)', textAlign: 'center', padding: '10px' }}>
+                      No device models found
                     </div>
-                    {device.ip && (
-                      <div style={{ 
-                        color: 'var(--text-secondary)', 
-                        fontSize: '10px',
-                        marginTop: '2px'
-                      }}>
-                        {device.ip}
-                      </div>
-                    )}
-                  </div>
+                  )}
+                </div>
+                {selectedDevicemodels.length > 0 && (
                   <button
-                    onClick={() => {
-                      setPendingFilterDevices(pendingFilterDevices.filter(d => d.id !== device.id));
-                    }}
-                    title="Remove"
+                    onClick={() => setSelectedDevicemodels([])}
+                    className="action-btn"
                     style={{
+                      marginTop: '8px',
+                      width: '100%',
+                      padding: '6px',
+                      background: 'var(--cfx3rdlevel)',
+                      border: '1px solid var(--border)',
+                      borderRadius: '4px',
+                      cursor: 'pointer',
+                      fontSize: '11px',
+                      color: 'var(--text-secondary)'
+                    }}
+                  >
+                    Clear Selection ({selectedDevicemodels.length} selected)
+                  </button>
+                )}
+              </div>
+            ) : (
+              <div style={{ position: 'relative' }}>
+                <input
+                  type="text"
+                  placeholder={`Search by ${searchField}...`}
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="search-input"
+                  style={{
+                    width: '100%',
+                    padding: '8px 30px 8px 8px',
+                    fontSize: '12px',
+                    boxSizing: 'border-box'
+                  }}
+                />
+                {searchTerm && (
+                  <button
+                    onClick={() => setSearchTerm('')}
+                    style={{
+                      position: 'absolute',
+                      right: '5px',
+                      top: '50%',
+                      transform: 'translateY(-50%)',
                       background: 'none',
                       border: 'none',
                       cursor: 'pointer',
-                      color: 'var(--error)',
+                      color: 'var(--text-muted)',
                       fontSize: '14px',
-                      padding: '4px',
-                      marginLeft: '8px',
-                      display: 'flex',
-                      alignItems: 'center'
+                      padding: '0 5px'
                     }}
+                    title="Clear search"
                   >
                     <TimesIcon />
                   </button>
-                </div>
-              ))}
-            </div>
-            
-            {/* Apply Filter Button */}
-            <button
-              onClick={() => {
-                setSelectedDevices(pendingFilterDevices.map(d => d.id));
-                setPendingFilterDevices([]);
-              }}
-              className="action-btn"
-              style={{
-                width: '100%',
-                padding: '10px',
-                background: 'var(--success)',
-                color: 'white',
-                border: 'none',
-                borderRadius: '4px',
-                cursor: 'pointer',
-                fontSize: '12px',
-                fontWeight: 'bold',
-                transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)'
-              }}
-              onMouseEnter={(e) => e.target.style.background = 'var(--green)'}
-              onMouseLeave={(e) => e.target.style.background = 'var(--success)'}
-            >
-              Apply Filter
-            </button>
+                )}
+              </div>
+            )}
           </div>
-        )}
 
-        {/* Link Type Filters */}
-        <div style={{
-          background: 'var(--card)',
-          border: '1px solid var(--border)',
-          borderRadius: '8px',
-          padding: '10px',
-          boxShadow: 'var(--elevation-2)'
-        }}>
-          <div style={{ 
-            fontWeight: 'bold', 
-            fontSize: '12px', 
-            marginBottom: '6px',
-            color: 'var(--primary)'
+          {/* Device Filters */}
+          <div style={{
+            background: 'var(--card)',
+            border: '1px solid var(--border)',
+            borderRadius: '8px',
+            padding: '10px',
+            boxShadow: 'var(--elevation-2)'
           }}>
-            Link Type Filters
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            {Object.keys(linkTypeFilters).map(linkType => (
-              <label key={linkType} style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+            <div style={{
+              fontWeight: 'bold',
+              fontSize: '12px',
+              marginBottom: '6px',
+              color: 'var(--primary)'
+            }}>
+              Device Filters
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
                 <input
                   type="checkbox"
-                  checked={linkTypeFilters[linkType]}
-                  onChange={() => handleLinkTypeToggle(linkType)}
+                  checked={showUnmanagedDevices}
+                  onChange={(e) => setShowUnmanagedDevices(e.target.checked)}
                   style={{ cursor: 'pointer' }}
                 />
-                <div style={{ 
-                  width: '25px', 
-                  height: '3px', 
-                  backgroundColor: linkTypeColors[linkType] 
-                }}></div>
-                <span style={{ fontSize: '12px' }}>{linkType}</span>
+                <span style={{ fontSize: '12px' }}>Show Unmanaged Devices</span>
               </label>
-            ))}
+            </div>
           </div>
-        </div>
+
+          {/* Pending Filter Devices */}
+          {pendingFilterDevices.length > 0 && (
+            <div style={{
+              background: 'var(--card)',
+              border: '2px solid var(--primary)',
+              borderRadius: '8px',
+              padding: '10px',
+              boxShadow: 'var(--elevation-4)'
+            }}>
+              <div style={{
+                fontWeight: 'bold',
+                fontSize: '12px',
+                marginBottom: '8px',
+                color: 'var(--primary)',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center'
+              }}>
+                <span>📋 Devices to Filter ({pendingFilterDevices.length})</span>
+                <button
+                  onClick={() => setPendingFilterDevices([])}
+                  title="Clear all pending devices"
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    cursor: 'pointer',
+                    color: 'var(--error)',
+                    fontSize: '16px',
+                    padding: '0',
+                    display: 'flex',
+                    alignItems: 'center'
+                  }}
+                >
+                  <TimesIcon />
+                </button>
+              </div>
+
+              <div style={{
+                fontSize: '10px',
+                color: 'var(--text-secondary)',
+                marginBottom: '8px',
+                fontStyle: 'italic'
+              }}>
+                Right-click devices in the graph to add them here
+              </div>
+
+              {/* Device List */}
+              <div style={{
+                maxHeight: '200px',
+                overflowY: 'auto',
+                marginBottom: '10px',
+                border: '1px solid var(--border)',
+                borderRadius: '4px',
+                background: 'var(--cfx3rdlevel)'
+              }}>
+                {pendingFilterDevices.map((device, idx) => (
+                  <div
+                    key={device.id}
+                    style={{
+                      padding: '8px',
+                      borderBottom: idx < pendingFilterDevices.length - 1 ? '1px solid var(--border)' : 'none',
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      fontSize: '11px',
+                      background: idx % 2 === 0 ? 'var(--cfx3rdlevel)' : 'var(--card)'
+                    }}
+                  >
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{
+                        fontWeight: '600',
+                        color: 'var(--text)',
+                        whiteSpace: 'nowrap',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis'
+                      }}>
+                        {device.label || device.hostname || device.id}
+                      </div>
+                      {device.ip && (
+                        <div style={{
+                          color: 'var(--text-secondary)',
+                          fontSize: '10px',
+                          marginTop: '2px'
+                        }}>
+                          {device.ip}
+                        </div>
+                      )}
+                    </div>
+                    <button
+                      onClick={() => {
+                        setPendingFilterDevices(pendingFilterDevices.filter(d => d.id !== device.id));
+                      }}
+                      title="Remove"
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        cursor: 'pointer',
+                        color: 'var(--error)',
+                        fontSize: '14px',
+                        padding: '4px',
+                        marginLeft: '8px',
+                        display: 'flex',
+                        alignItems: 'center'
+                      }}
+                    >
+                      <TimesIcon />
+                    </button>
+                  </div>
+                ))}
+              </div>
+
+              {/* Apply Filter Button */}
+              <button
+                onClick={() => {
+                  setSelectedDevices(pendingFilterDevices.map(d => d.id));
+                  setPendingFilterDevices([]);
+                }}
+                className="action-btn"
+                style={{
+                  width: '100%',
+                  padding: '10px',
+                  background: 'var(--success)',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  fontSize: '12px',
+                  fontWeight: 'bold',
+                  transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)'
+                }}
+                onMouseEnter={(e) => e.target.style.background = 'var(--green)'}
+                onMouseLeave={(e) => e.target.style.background = 'var(--success)'}
+              >
+                Apply Filter
+              </button>
+            </div>
+          )}
+
+          {/* Link Type Filters */}
+          <div style={{
+            background: 'var(--card)',
+            border: '1px solid var(--border)',
+            borderRadius: '8px',
+            padding: '10px',
+            boxShadow: 'var(--elevation-2)'
+          }}>
+            <div style={{
+              fontWeight: 'bold',
+              fontSize: '12px',
+              marginBottom: '6px',
+              color: 'var(--primary)'
+            }}>
+              Link Type Filters
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              {Object.keys(linkTypeFilters).map(linkType => (
+                <label key={linkType} style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={linkTypeFilters[linkType]}
+                    onChange={() => handleLinkTypeToggle(linkType)}
+                    style={{ cursor: 'pointer' }}
+                  />
+                  <div style={{
+                    width: '25px',
+                    height: '3px',
+                    backgroundColor: linkTypeColors[linkType]
+                  }}></div>
+                  <span style={{ fontSize: '12px' }}>{linkType}</span>
+                </label>
+              ))}
+            </div>
+          </div>
         </div>
       )}
 
@@ -2298,7 +2305,7 @@ const TopologyGraph = () => {
           setCy(cyInstance);
         }}
       />
-      
+
       {/* Context Menu */}
       {contextMenu && (
         <div
@@ -2378,31 +2385,31 @@ const TopologyGraph = () => {
               <button
                 onClick={() => {
                   if (!cy) return;
-                  
+
                   // Get the selected node
                   const node = cy.getElementById(contextMenu.data.id);
                   if (!node) return;
-                  
+
                   // Get all neighbor nodes
                   const neighbors = node.neighborhood('node');
-                  
+
                   // Collect all device IDs to filter (selected node + neighbors)
                   const deviceIdsToShow = [];
-                  
+
                   // Add the selected node
                   deviceIdsToShow.push(contextMenu.data.id);
-                  
+
                   // Add all neighbor nodes
                   neighbors.forEach(neighborNode => {
                     deviceIdsToShow.push(neighborNode.id());
                   });
-                  
+
                   // Directly apply the filter
                   setSelectedDevices(deviceIdsToShow);
-                  
+
                   // Clear pending devices
                   setPendingFilterDevices([]);
-                  
+
                   setContextMenu(null);
                 }}
                 className="action-btn"
@@ -2448,7 +2455,7 @@ const TopologyGraph = () => {
           </button>
         </div>
       )}
-      
+
       {/* Node Details Popup */}
       {selectedNode && cy && (
         <div
@@ -2468,9 +2475,9 @@ const TopologyGraph = () => {
             zIndex: 1000
           }}
         >
-          <div style={{ 
-            fontWeight: 'bold', 
-            fontSize: '16px', 
+          <div style={{
+            fontWeight: 'bold',
+            fontSize: '16px',
             marginBottom: '15px',
             color: 'var(--primary)',
             borderBottom: '2px solid var(--primary)',
@@ -2478,10 +2485,10 @@ const TopologyGraph = () => {
           }}>
             {selectedNode.label || selectedNode.id}
           </div>
-          
+
           {/* Tab Navigation */}
-          <div className="tabs-nav" style={{ 
-            display: 'flex', 
+          <div className="tabs-nav" style={{
+            display: 'flex',
             marginBottom: '15px',
             borderBottom: '1px solid var(--border)'
           }}>
@@ -2527,7 +2534,7 @@ const TopologyGraph = () => {
               })()}
             </button>
           </div>
-          
+
           {/* Tab Content */}
           {activeTab === 'details' && (
             <table style={{
@@ -2544,7 +2551,7 @@ const TopologyGraph = () => {
                     const formattedKey = key
                       .replace(/_/g, ' ')
                       .replace(/\b\w/g, l => l.toUpperCase());
-                    
+
                     return (
                       <tr key={key} style={{ borderBottom: '1px solid var(--border)' }}>
                         <td style={{
@@ -2571,7 +2578,7 @@ const TopologyGraph = () => {
               </tbody>
             </table>
           )}
-          
+
           {activeTab === 'links' && (
             <div style={{ maxHeight: '100%', maxWidth: '100%', overflowY: 'auto', overflowX: 'auto' }}>
               <table style={{
@@ -2600,9 +2607,9 @@ const TopologyGraph = () => {
                 <tbody>
                   {cy.getElementById(selectedNode.id).connectedEdges().map((edge, idx) => {
                     const edgeData = edge.data();
-                    
+
                     return (
-                      <tr key={idx} style={{ 
+                      <tr key={idx} style={{
                         borderBottom: '1px solid var(--border)',
                         background: idx % 2 === 0 ? 'var(--cfx3rdlevel)' : 'var(--card)'
                       }}>
@@ -2654,9 +2661,9 @@ const TopologyGraph = () => {
                 </tbody>
               </table>
               {cy.getElementById(selectedNode.id).connectedEdges().length === 0 && (
-                <div style={{ 
-                  padding: '20px', 
-                  textAlign: 'center', 
+                <div style={{
+                  padding: '20px',
+                  textAlign: 'center',
                   color: 'var(--text-muted)',
                   fontSize: '12px'
                 }}>
@@ -2665,13 +2672,13 @@ const TopologyGraph = () => {
               )}
             </div>
           )}
-          
+
           {activeTab === 'alerts' && (
             <div style={{ maxHeight: '100%', maxWidth: '100%', overflowY: 'auto', overflowX: 'auto' }}>
               {loadingAlerts ? (
-                <div style={{ 
-                  padding: '20px', 
-                  textAlign: 'center', 
+                <div style={{
+                  padding: '20px',
+                  textAlign: 'center',
                   color: 'var(--text-muted)',
                   fontSize: '12px'
                 }}>
@@ -2705,7 +2712,7 @@ const TopologyGraph = () => {
                           raisedTime = alert.a_raised_ts;
                         }
                       }
-                      
+
                       // Determine severity color
                       const severityColors = {
                         'CRITICAL': '#F44336',
@@ -2715,14 +2722,14 @@ const TopologyGraph = () => {
                         'INFO': '#4CAF50'
                       };
                       const severityColor = severityColors[alert.a_severity] || 'var(--text)';
-                      
+
                       return (
-                        <tr key={idx} style={{ 
+                        <tr key={idx} style={{
                           borderBottom: '1px solid var(--border)',
                           background: idx % 2 === 0 ? 'var(--cfx3rdlevel)' : 'var(--card)'
                         }}>
-                          <td style={{ 
-                            padding: '8px', 
+                          <td style={{
+                            padding: '8px',
                             whiteSpace: 'nowrap',
                             color: severityColor,
                             fontWeight: '600'
@@ -2732,7 +2739,7 @@ const TopologyGraph = () => {
                           <td style={{ padding: '8px', whiteSpace: 'nowrap' }}>
                             {alert.a_alert_type || '-'}
                           </td>
-                          <td style={{ 
+                          <td style={{
                             padding: '8px',
                             maxWidth: '300px',
                             overflow: 'hidden',
@@ -2756,9 +2763,9 @@ const TopologyGraph = () => {
                   </tbody>
                 </table>
               ) : (
-                <div style={{ 
-                  padding: '20px', 
-                  textAlign: 'center', 
+                <div style={{
+                  padding: '20px',
+                  textAlign: 'center',
                   color: 'var(--text-muted)',
                   fontSize: '12px'
                 }}>
@@ -2767,7 +2774,7 @@ const TopologyGraph = () => {
               )}
             </div>
           )}
-          
+
           <button
             onClick={() => {
               setSelectedNode(null);
@@ -2792,7 +2799,7 @@ const TopologyGraph = () => {
           </button>
         </div>
       )}
-      
+
       {/* Edge Details Popup */}
       {selectedEdge && (
         <div
@@ -2812,9 +2819,9 @@ const TopologyGraph = () => {
             zIndex: 1000
           }}
         >
-          <div style={{ 
-            fontWeight: 'bold', 
-            fontSize: '16px', 
+          <div style={{
+            fontWeight: 'bold',
+            fontSize: '16px',
             marginBottom: '15px',
             color: 'var(--primary)',
             borderBottom: '2px solid var(--primary)',
@@ -2822,7 +2829,7 @@ const TopologyGraph = () => {
           }}>
             Link Details
           </div>
-          
+
           <table style={{
             width: '100%',
             borderCollapse: 'collapse',
@@ -2837,7 +2844,7 @@ const TopologyGraph = () => {
                   const formattedKey = key
                     .replace(/_/g, ' ')
                     .replace(/\b\w/g, l => l.toUpperCase());
-                  
+
                   return (
                     <tr key={key} style={{ borderBottom: '1px solid var(--border)' }}>
                       <td style={{
@@ -2863,7 +2870,7 @@ const TopologyGraph = () => {
                 })}
             </tbody>
           </table>
-          
+
           <button
             onClick={() => setSelectedEdge(null)}
             className="action-btn"
@@ -2881,566 +2888,566 @@ const TopologyGraph = () => {
               transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)'
             }}
           >
-          Close
-        </button>
-      </div>
-    )}
-    
-    {/* Save View Dialog */}
-    {showSaveViewDialog && (
-      <>
-        {/* Backdrop */}
-        <div
-          onClick={() => setShowSaveViewDialog(false)}
-          style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            width: '100vw',
-            height: '100vh',
-            background: 'rgba(0, 0, 0, 0.5)',
-            zIndex: 2000,
-            backdropFilter: 'blur(2px)'
-          }}
-        />
-        
-        {/* Dialog */}
-        <div
-          style={{
-            position: 'fixed',
-            top: '50%',
-            left: '50%',
-            transform: 'translate(-50%, -50%)',
-            background: 'var(--card)',
-            border: '1px solid var(--border)',
-            borderRadius: '8px',
-            boxShadow: 'var(--elevation-24)',
-            zIndex: 2001,
-            width: '90vw',
-            maxWidth: '400px',
-            padding: '20px'
-          }}
-        >
-          {/* Header */}
-          <div style={{
-            fontSize: '16px',
-            fontWeight: '600',
-            marginBottom: '15px',
-            color: 'var(--text)',
-            borderBottom: '2px solid var(--primary)',
-            paddingBottom: '8px'
-          }}>
-            Save Current View
-          </div>
-          
-          {/* Content */}
-          <div style={{ marginBottom: '15px' }}>
-            <label style={{
-              display: 'block',
-              fontSize: '12px',
-              fontWeight: '600',
-              marginBottom: '8px',
-              color: 'var(--text)'
-            }}>
-              View Name
-            </label>
-            <input
-              type="text"
-              value={newViewName}
-              onChange={(e) => setNewViewName(e.target.value)}
-              onKeyPress={(e) => {
-                if (e.key === 'Enter') {
-                  saveView(newViewName);
-                }
-              }}
-              placeholder="Enter a name for this view..."
-              autoFocus
-              style={{
-                width: '100%',
-                padding: '10px',
-                fontSize: '13px',
-                border: '1px solid var(--border)',
-                borderRadius: '4px',
-                background: 'var(--bg)',
-                color: 'var(--text)',
-                outline: 'none'
-              }}
-            />
-            <div style={{
-              fontSize: '11px',
-              color: 'var(--text-secondary)',
-              marginTop: '8px',
-              lineHeight: '1.4'
-            }}>
-              This will save: selected devices, search term, device models, link type filters, and unmanaged device visibility.
-            </div>
-          </div>
-          
-          {/* Buttons */}
-          <div style={{ display: 'flex', gap: '10px' }}>
-            <button
-              onClick={() => {
-                setShowSaveViewDialog(false);
-                setNewViewName('');
-              }}
-              className="action-btn"
-              style={{
-                flex: 1,
-                padding: '10px',
-                background: 'var(--cfx3rdlevel)',
-                color: 'var(--text)',
-                border: '1px solid var(--border)',
-                borderRadius: '4px',
-                cursor: 'pointer',
-                fontSize: '13px',
-                fontWeight: '500',
-                transition: 'all 0.2s'
-              }}
-              onMouseEnter={(e) => e.target.style.background = 'var(--cfx2ndlevel)'}
-              onMouseLeave={(e) => e.target.style.background = 'var(--cfx3rdlevel)'}
-            >
-              Cancel
-            </button>
-            <button
-              onClick={() => saveView(newViewName)}
-              className="action-btn"
-              style={{
-                flex: 1,
-                padding: '10px',
-                background: 'var(--success)',
-                color: 'var(--text)',
-                border: 'none',
-                borderRadius: '4px',
-                cursor: 'pointer',
-                fontSize: '13px',
-                fontWeight: '500',
-                transition: 'all 0.2s'
-              }}
-              onMouseEnter={(e) => e.target.style.background = 'var(--success-hover)'}
-              onMouseLeave={(e) => e.target.style.background = 'var(--success)'}
-            >
-              Save View
-            </button>
-          </div>
-        </div>
-      </>
-    )}
-    
-    {/* Filter Help Popup */}
-    {showFilterHelp && (
-      <>
-        {/* Backdrop */}
-        <div
-          onClick={() => setShowFilterHelp(false)}
-          style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            width: '100vw',
-            height: '100vh',
-            background: 'rgba(0, 0, 0, 0.5)',
-            zIndex: 2000,
-            backdropFilter: 'blur(2px)'
-          }}
-        />
-        
-        {/* Popup */}
-        <div
-          style={{
-            position: 'fixed',
-            top: '50%',
-            left: '50%',
-            transform: 'translate(-50%, -50%)',
-            background: 'var(--card)',
-            border: '1px solid var(--border)',
-            borderRadius: '8px',
-            boxShadow: 'var(--elevation-24)',
-            zIndex: 2001,
-            width: '90vw',
-            maxWidth: '500px',
-            padding: '20px'
-          }}
-        >
-          {/* Header */}
-          <div style={{
-            fontSize: '16px',
-            fontWeight: '600',
-            marginBottom: '15px',
-            color: 'var(--text)',
-            borderBottom: '2px solid var(--primary)',
-            paddingBottom: '8px'
-          }}>
-            Filter Methods
-          </div>
-          
-          {/* Content */}
-          <div style={{
-            fontSize: '13px',
-            color: 'var(--text)',
-            lineHeight: '1.8'
-          }}>
-            <div style={{ marginBottom: '12px' }}>
-              <div style={{ fontWeight: '600', color: 'var(--primary)', marginBottom: '4px' }}>
-                1. Quick Text Search
-              </div>
-              <div style={{ paddingLeft: '15px', color: 'var(--text-secondary)' }}>
-                Use the search field below to filter by device label or IP address
-              </div>
-            </div>
-            
-            <div style={{ marginBottom: '12px' }}>
-              <div style={{ fontWeight: '600', color: 'var(--primary)', marginBottom: '4px' }}>
-                2. Table Selection
-              </div>
-              <div style={{ paddingLeft: '15px', color: 'var(--text-secondary)' }}>
-                Click the filter icon button to select multiple devices from a table
-              </div>
-            </div>
-            
-            <div style={{ marginBottom: '12px' }}>
-              <div style={{ fontWeight: '600', color: 'var(--primary)', marginBottom: '4px' }}>
-                3. Right-Click Menu
-              </div>
-              <div style={{ paddingLeft: '15px', color: 'var(--text-secondary)' }}>
-                • <strong>Add to Filter</strong> (staged): Add devices to pending list, then apply<br/>
-                • <strong>Show Node + Neighbors</strong> (instant): Immediately show only the selected node and its connected neighbors
-              </div>
-            </div>
-          </div>
-          
-          {/* Close Button */}
-          <button
-            onClick={() => setShowFilterHelp(false)}
-            className="action-btn"
-            style={{
-              marginTop: '15px',
-              width: '100%',
-              padding: '10px',
-              background: 'var(--primary)',
-              color: 'var(--text)',
-              border: 'none',
-              borderRadius: '4px',
-              cursor: 'pointer',
-              fontSize: '13px',
-              fontWeight: '500',
-              transition: 'all 0.2s'
-            }}
-            onMouseEnter={(e) => e.target.style.background = 'var(--accent-hover)'}
-            onMouseLeave={(e) => e.target.style.background = 'var(--primary)'}
-          >
-            Got it!
+            Close
           </button>
         </div>
-      </>
-    )}
-    
-    {/* Device Selection Popup */}
-    {showDevicePopup && (
-      <>
-        {/* Backdrop */}
-        <div
-          onClick={() => setShowDevicePopup(false)}
-          style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            width: '100vw',
-            height: '100vh',
-            background: 'rgba(0, 0, 0, 0.5)',
-            zIndex: 2000,
-            backdropFilter: 'blur(2px)'
-          }}
-        />
-        
-        {/* Popup */}
-        <div
-          style={{
-            position: 'fixed',
-            top: '50%',
-            left: '50%',
-            transform: 'translate(-50%, -50%)',
-            background: 'var(--card)',
-            border: '1px solid var(--border)',
-            borderRadius: '8px',
-            boxShadow: 'var(--elevation-24)',
-            zIndex: 2001,
-            width: '90vw',
-            maxWidth: '900px',
-            maxHeight: '80vh',
-            display: 'flex',
-            flexDirection: 'column'
-          }}
-        >
-          {/* Header */}
-          <div style={{
-            padding: '20px',
-            borderBottom: '2px solid var(--primary)',
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center'
-          }}>
-            <div>
-              <h3 style={{ 
-                margin: 0, 
-                fontSize: '18px', 
-                color: 'var(--text)',
-                fontWeight: 'bold'
-              }}>
-                🔍 Select Devices to Filter
-              </h3>
-              <p style={{ 
-                margin: '4px 0 0 0', 
-                fontSize: '12px', 
-                color: 'var(--text-secondary)' 
-              }}>
-                Use this table to select devices by their details
-              </p>
-              <p style={{ 
-                margin: '2px 0 0 0', 
-                fontSize: '11px', 
-                color: 'var(--text-muted)',
-                fontStyle: 'italic'
-              }}>
-                {selectedDevices.length} of {allDevices.length} devices selected
-              </p>
-            </div>
-            <button
-              onClick={() => setShowDevicePopup(false)}
-              style={{
-                background: 'none',
-                border: 'none',
-                cursor: 'pointer',
-                color: 'var(--text-muted)',
-                fontSize: '24px',
-                padding: '0',
-                width: '32px',
-                height: '32px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center'
-              }}
-              title="Close"
-            >
-              <TimesIcon />
-            </button>
-          </div>
-          
-          {/* Action Buttons */}
-          <div style={{
-            padding: '12px 20px',
-            display: 'flex',
-            gap: '12px',
-            borderBottom: '1px solid var(--border)'
-          }}>
-            <button
-              onClick={() => setSelectedDevices(allDevices.map(d => d.id))}
-              className="action-btn"
-              style={{
-                padding: '8px 16px',
-                background: 'var(--primary)',
-                color: 'var(--text)',
-                border: 'none',
-                borderRadius: '4px',
-                cursor: 'pointer',
-                fontSize: '12px',
-                fontWeight: '500'
-              }}
-            >
-              Select All
-            </button>
-            <button
-              onClick={() => setSelectedDevices([])}
-              className="action-btn"
-              style={{
-                padding: '8px 16px',
-                background: 'var(--cfx3rdlevel)',
-                color: 'var(--text)',
-                border: '1px solid var(--border)',
-                borderRadius: '4px',
-                cursor: 'pointer',
-                fontSize: '12px',
-                fontWeight: '500'
-              }}
-            >
-              Clear All
-            </button>
-          </div>
-          
-          {/* Device List */}
-          <div style={{
-            flex: 1,
-            overflowY: 'auto',
-            padding: '12px'
-          }}>
-            <table style={{
-              width: '100%',
-              borderCollapse: 'collapse',
-              fontSize: '12px'
+      )}
+
+      {/* Save View Dialog */}
+      {showSaveViewDialog && (
+        <>
+          {/* Backdrop */}
+          <div
+            onClick={() => setShowSaveViewDialog(false)}
+            style={{
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              width: '100vw',
+              height: '100vh',
+              background: 'rgba(0, 0, 0, 0.5)',
+              zIndex: 2000,
+              backdropFilter: 'blur(2px)'
+            }}
+          />
+
+          {/* Dialog */}
+          <div
+            style={{
+              position: 'fixed',
+              top: '50%',
+              left: '50%',
+              transform: 'translate(-50%, -50%)',
+              background: 'var(--card)',
+              border: '1px solid var(--border)',
+              borderRadius: '8px',
+              boxShadow: 'var(--elevation-24)',
+              zIndex: 2001,
+              width: '90vw',
+              maxWidth: '400px',
+              padding: '20px'
+            }}
+          >
+            {/* Header */}
+            <div style={{
+              fontSize: '16px',
+              fontWeight: '600',
+              marginBottom: '15px',
+              color: 'var(--text)',
+              borderBottom: '2px solid var(--primary)',
+              paddingBottom: '8px'
             }}>
-              <thead style={{
-                position: 'sticky',
-                top: 0,
+              Save Current View
+            </div>
+
+            {/* Content */}
+            <div style={{ marginBottom: '15px' }}>
+              <label style={{
+                display: 'block',
+                fontSize: '12px',
+                fontWeight: '600',
+                marginBottom: '8px',
+                color: 'var(--text)'
+              }}>
+                View Name
+              </label>
+              <input
+                type="text"
+                value={newViewName}
+                onChange={(e) => setNewViewName(e.target.value)}
+                onKeyPress={(e) => {
+                  if (e.key === 'Enter') {
+                    saveView(newViewName);
+                  }
+                }}
+                placeholder="Enter a name for this view..."
+                autoFocus
+                style={{
+                  width: '100%',
+                  padding: '10px',
+                  fontSize: '13px',
+                  border: '1px solid var(--border)',
+                  borderRadius: '4px',
+                  background: 'var(--bg)',
+                  color: 'var(--text)',
+                  outline: 'none'
+                }}
+              />
+              <div style={{
+                fontSize: '11px',
+                color: 'var(--text-secondary)',
+                marginTop: '8px',
+                lineHeight: '1.4'
+              }}>
+                This will save: selected devices, search term, device models, link type filters, and unmanaged device visibility.
+              </div>
+            </div>
+
+            {/* Buttons */}
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button
+                onClick={() => {
+                  setShowSaveViewDialog(false);
+                  setNewViewName('');
+                }}
+                className="action-btn"
+                style={{
+                  flex: 1,
+                  padding: '10px',
+                  background: 'var(--cfx3rdlevel)',
+                  color: 'var(--text)',
+                  border: '1px solid var(--border)',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  fontSize: '13px',
+                  fontWeight: '500',
+                  transition: 'all 0.2s'
+                }}
+                onMouseEnter={(e) => e.target.style.background = 'var(--cfx2ndlevel)'}
+                onMouseLeave={(e) => e.target.style.background = 'var(--cfx3rdlevel)'}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => saveView(newViewName)}
+                className="action-btn"
+                style={{
+                  flex: 1,
+                  padding: '10px',
+                  background: 'var(--success)',
+                  color: 'var(--text)',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  fontSize: '13px',
+                  fontWeight: '500',
+                  transition: 'all 0.2s'
+                }}
+                onMouseEnter={(e) => e.target.style.background = 'var(--success-hover)'}
+                onMouseLeave={(e) => e.target.style.background = 'var(--success)'}
+              >
+                Save View
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Filter Help Popup */}
+      {showFilterHelp && (
+        <>
+          {/* Backdrop */}
+          <div
+            onClick={() => setShowFilterHelp(false)}
+            style={{
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              width: '100vw',
+              height: '100vh',
+              background: 'rgba(0, 0, 0, 0.5)',
+              zIndex: 2000,
+              backdropFilter: 'blur(2px)'
+            }}
+          />
+
+          {/* Popup */}
+          <div
+            style={{
+              position: 'fixed',
+              top: '50%',
+              left: '50%',
+              transform: 'translate(-50%, -50%)',
+              background: 'var(--card)',
+              border: '1px solid var(--border)',
+              borderRadius: '8px',
+              boxShadow: 'var(--elevation-24)',
+              zIndex: 2001,
+              width: '90vw',
+              maxWidth: '500px',
+              padding: '20px'
+            }}
+          >
+            {/* Header */}
+            <div style={{
+              fontSize: '16px',
+              fontWeight: '600',
+              marginBottom: '15px',
+              color: 'var(--text)',
+              borderBottom: '2px solid var(--primary)',
+              paddingBottom: '8px'
+            }}>
+              Filter Methods
+            </div>
+
+            {/* Content */}
+            <div style={{
+              fontSize: '13px',
+              color: 'var(--text)',
+              lineHeight: '1.8'
+            }}>
+              <div style={{ marginBottom: '12px' }}>
+                <div style={{ fontWeight: '600', color: 'var(--primary)', marginBottom: '4px' }}>
+                  1. Quick Text Search
+                </div>
+                <div style={{ paddingLeft: '15px', color: 'var(--text-secondary)' }}>
+                  Use the search field below to filter by device label or IP address
+                </div>
+              </div>
+
+              <div style={{ marginBottom: '12px' }}>
+                <div style={{ fontWeight: '600', color: 'var(--primary)', marginBottom: '4px' }}>
+                  2. Table Selection
+                </div>
+                <div style={{ paddingLeft: '15px', color: 'var(--text-secondary)' }}>
+                  Click the filter icon button to select multiple devices from a table
+                </div>
+              </div>
+
+              <div style={{ marginBottom: '12px' }}>
+                <div style={{ fontWeight: '600', color: 'var(--primary)', marginBottom: '4px' }}>
+                  3. Right-Click Menu
+                </div>
+                <div style={{ paddingLeft: '15px', color: 'var(--text-secondary)' }}>
+                  • <strong>Add to Filter</strong> (staged): Add devices to pending list, then apply<br />
+                  • <strong>Show Node + Neighbors</strong> (instant): Immediately show only the selected node and its connected neighbors
+                </div>
+              </div>
+            </div>
+
+            {/* Close Button */}
+            <button
+              onClick={() => setShowFilterHelp(false)}
+              className="action-btn"
+              style={{
+                marginTop: '15px',
+                width: '100%',
+                padding: '10px',
                 background: 'var(--primary)',
                 color: 'var(--text)',
-                zIndex: 1
+                border: 'none',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                fontSize: '13px',
+                fontWeight: '500',
+                transition: 'all 0.2s'
+              }}
+              onMouseEnter={(e) => e.target.style.background = 'var(--accent-hover)'}
+              onMouseLeave={(e) => e.target.style.background = 'var(--primary)'}
+            >
+              Got it!
+            </button>
+          </div>
+        </>
+      )}
+
+      {/* Device Selection Popup */}
+      {showDevicePopup && (
+        <>
+          {/* Backdrop */}
+          <div
+            onClick={() => setShowDevicePopup(false)}
+            style={{
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              width: '100vw',
+              height: '100vh',
+              background: 'rgba(0, 0, 0, 0.5)',
+              zIndex: 2000,
+              backdropFilter: 'blur(2px)'
+            }}
+          />
+
+          {/* Popup */}
+          <div
+            style={{
+              position: 'fixed',
+              top: '50%',
+              left: '50%',
+              transform: 'translate(-50%, -50%)',
+              background: 'var(--card)',
+              border: '1px solid var(--border)',
+              borderRadius: '8px',
+              boxShadow: 'var(--elevation-24)',
+              zIndex: 2001,
+              width: '90vw',
+              maxWidth: '900px',
+              maxHeight: '80vh',
+              display: 'flex',
+              flexDirection: 'column'
+            }}
+          >
+            {/* Header */}
+            <div style={{
+              padding: '20px',
+              borderBottom: '2px solid var(--primary)',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center'
+            }}>
+              <div>
+                <h3 style={{
+                  margin: 0,
+                  fontSize: '18px',
+                  color: 'var(--text)',
+                  fontWeight: 'bold'
+                }}>
+                  🔍 Select Devices to Filter
+                </h3>
+                <p style={{
+                  margin: '4px 0 0 0',
+                  fontSize: '12px',
+                  color: 'var(--text-secondary)'
+                }}>
+                  Use this table to select devices by their details
+                </p>
+                <p style={{
+                  margin: '2px 0 0 0',
+                  fontSize: '11px',
+                  color: 'var(--text-muted)',
+                  fontStyle: 'italic'
+                }}>
+                  {selectedDevices.length} of {allDevices.length} devices selected
+                </p>
+              </div>
+              <button
+                onClick={() => setShowDevicePopup(false)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  cursor: 'pointer',
+                  color: 'var(--text-muted)',
+                  fontSize: '24px',
+                  padding: '0',
+                  width: '32px',
+                  height: '32px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}
+                title="Close"
+              >
+                <TimesIcon />
+              </button>
+            </div>
+
+            {/* Action Buttons */}
+            <div style={{
+              padding: '12px 20px',
+              display: 'flex',
+              gap: '12px',
+              borderBottom: '1px solid var(--border)'
+            }}>
+              <button
+                onClick={() => setSelectedDevices(allDevices.map(d => d.id))}
+                className="action-btn"
+                style={{
+                  padding: '8px 16px',
+                  background: 'var(--primary)',
+                  color: 'var(--text)',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  fontSize: '12px',
+                  fontWeight: '500'
+                }}
+              >
+                Select All
+              </button>
+              <button
+                onClick={() => setSelectedDevices([])}
+                className="action-btn"
+                style={{
+                  padding: '8px 16px',
+                  background: 'var(--cfx3rdlevel)',
+                  color: 'var(--text)',
+                  border: '1px solid var(--border)',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  fontSize: '12px',
+                  fontWeight: '500'
+                }}
+              >
+                Clear All
+              </button>
+            </div>
+
+            {/* Device List */}
+            <div style={{
+              flex: 1,
+              overflowY: 'auto',
+              padding: '12px'
+            }}>
+              <table style={{
+                width: '100%',
+                borderCollapse: 'collapse',
+                fontSize: '12px'
               }}>
-                <tr>
-                  <th style={{ 
-                    padding: '10px 8px', 
-                    textAlign: 'left',
-                    width: '40px'
-                  }}>
-                    <input
-                      type="checkbox"
-                      checked={selectedDevices.length === allDevices.length && allDevices.length > 0}
-                      onChange={(e) => {
-                        if (e.target.checked) {
-                          setSelectedDevices(allDevices.map(d => d.id));
-                        } else {
-                          setSelectedDevices([]);
-                        }
-                      }}
-                      style={{ cursor: 'pointer' }}
-                    />
-                  </th>
-                  <th style={{ padding: '10px 8px', textAlign: 'left' }}>Hostname</th>
-                  <th style={{ padding: '10px 8px', textAlign: 'left' }}>IP Address</th>
-                  <th style={{ padding: '10px 8px', textAlign: 'left' }}>Device Model</th>
-                  <th style={{ padding: '10px 8px', textAlign: 'left' }}>Vendor</th>
-                  <th style={{ padding: '10px 8px', textAlign: 'left' }}>Location</th>
-                  <th style={{ padding: '10px 8px', textAlign: 'left' }}>Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {allDevices.map((device, idx) => (
-                  <tr
-                    key={device.id}
-                    style={{
-                      borderBottom: '1px solid var(--border)',
-                      background: selectedDevices.includes(device.id) 
-                        ? 'var(--accent-light)' 
-                        : (idx % 2 === 0 ? 'var(--cfx3rdlevel)' : 'var(--card)'),
-                      cursor: 'pointer',
-                      transition: 'background 0.2s'
-                    }}
-                    onClick={() => {
-                      if (selectedDevices.includes(device.id)) {
-                        setSelectedDevices(selectedDevices.filter(id => id !== device.id));
-                      } else {
-                        setSelectedDevices([...selectedDevices, device.id]);
-                      }
-                    }}
-                    onMouseEnter={(e) => {
-                      if (!selectedDevices.includes(device.id)) {
-                        e.currentTarget.style.background = 'var(--cfx3rdlevel)';
-                      }
-                    }}
-                    onMouseLeave={(e) => {
-                      if (!selectedDevices.includes(device.id)) {
-                        e.currentTarget.style.background = idx % 2 === 0 ? 'var(--cfx3rdlevel)' : 'var(--card)';
-                      }
-                    }}
-                  >
-                    <td style={{ padding: '8px' }}>
+                <thead style={{
+                  position: 'sticky',
+                  top: 0,
+                  background: 'var(--primary)',
+                  color: 'var(--text)',
+                  zIndex: 1
+                }}>
+                  <tr>
+                    <th style={{
+                      padding: '10px 8px',
+                      textAlign: 'left',
+                      width: '40px'
+                    }}>
                       <input
                         type="checkbox"
-                        checked={selectedDevices.includes(device.id)}
+                        checked={selectedDevices.length === allDevices.length && allDevices.length > 0}
                         onChange={(e) => {
-                          e.stopPropagation();
                           if (e.target.checked) {
-                            setSelectedDevices([...selectedDevices, device.id]);
+                            setSelectedDevices(allDevices.map(d => d.id));
                           } else {
-                            setSelectedDevices(selectedDevices.filter(id => id !== device.id));
+                            setSelectedDevices([]);
                           }
                         }}
                         style={{ cursor: 'pointer' }}
                       />
-                    </td>
-                    <td style={{ 
-                      padding: '8px', 
-                      fontWeight: '500',
-                      color: 'var(--text)'
-                    }}>
-                      {device.label || device.hostname || '-'}
-                    </td>
-                    <td style={{ padding: '8px', color: 'var(--text-secondary)' }}>
-                      {device.ip || '-'}
-                    </td>
-                    <td style={{ padding: '8px', color: 'var(--text-secondary)' }}>
-                      {device.model || '-'}
-                    </td>
-                    <td style={{ padding: '8px', color: 'var(--text-secondary)' }}>
-                      {device.vendor || '-'}
-                    </td>
-                    <td style={{ padding: '8px', color: 'var(--text-secondary)' }}>
-                      {device.location || '-'}
-                    </td>
-                    <td style={{ padding: '8px' }}>
-                      <span style={{
-                        padding: '4px 8px',
-                        borderRadius: '12px',
-                        fontSize: '10px',
-                        fontWeight: 'bold',
-                        background: device.mgmt_status?.toUpperCase().includes('UNMANAGED') 
-                          ? 'var(--error)' 
-                          : 'var(--success)',
-                        color: 'white'
-                      }}>
-                        {device.mgmt_status || 'Unknown'}
-                      </span>
-                    </td>
+                    </th>
+                    <th style={{ padding: '10px 8px', textAlign: 'left' }}>Hostname</th>
+                    <th style={{ padding: '10px 8px', textAlign: 'left' }}>IP Address</th>
+                    <th style={{ padding: '10px 8px', textAlign: 'left' }}>Device Model</th>
+                    <th style={{ padding: '10px 8px', textAlign: 'left' }}>Vendor</th>
+                    <th style={{ padding: '10px 8px', textAlign: 'left' }}>Location</th>
+                    <th style={{ padding: '10px 8px', textAlign: 'left' }}>Status</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {allDevices.map((device, idx) => (
+                    <tr
+                      key={device.id}
+                      style={{
+                        borderBottom: '1px solid var(--border)',
+                        background: selectedDevices.includes(device.id)
+                          ? 'var(--accent-light)'
+                          : (idx % 2 === 0 ? 'var(--cfx3rdlevel)' : 'var(--card)'),
+                        cursor: 'pointer',
+                        transition: 'background 0.2s'
+                      }}
+                      onClick={() => {
+                        if (selectedDevices.includes(device.id)) {
+                          setSelectedDevices(selectedDevices.filter(id => id !== device.id));
+                        } else {
+                          setSelectedDevices([...selectedDevices, device.id]);
+                        }
+                      }}
+                      onMouseEnter={(e) => {
+                        if (!selectedDevices.includes(device.id)) {
+                          e.currentTarget.style.background = 'var(--cfx3rdlevel)';
+                        }
+                      }}
+                      onMouseLeave={(e) => {
+                        if (!selectedDevices.includes(device.id)) {
+                          e.currentTarget.style.background = idx % 2 === 0 ? 'var(--cfx3rdlevel)' : 'var(--card)';
+                        }
+                      }}
+                    >
+                      <td style={{ padding: '8px' }}>
+                        <input
+                          type="checkbox"
+                          checked={selectedDevices.includes(device.id)}
+                          onChange={(e) => {
+                            e.stopPropagation();
+                            if (e.target.checked) {
+                              setSelectedDevices([...selectedDevices, device.id]);
+                            } else {
+                              setSelectedDevices(selectedDevices.filter(id => id !== device.id));
+                            }
+                          }}
+                          style={{ cursor: 'pointer' }}
+                        />
+                      </td>
+                      <td style={{
+                        padding: '8px',
+                        fontWeight: '500',
+                        color: 'var(--text)'
+                      }}>
+                        {device.label || device.hostname || '-'}
+                      </td>
+                      <td style={{ padding: '8px', color: 'var(--text-secondary)' }}>
+                        {device.ip || '-'}
+                      </td>
+                      <td style={{ padding: '8px', color: 'var(--text-secondary)' }}>
+                        {device.model || '-'}
+                      </td>
+                      <td style={{ padding: '8px', color: 'var(--text-secondary)' }}>
+                        {device.vendor || '-'}
+                      </td>
+                      <td style={{ padding: '8px', color: 'var(--text-secondary)' }}>
+                        {device.location || '-'}
+                      </td>
+                      <td style={{ padding: '8px' }}>
+                        <span style={{
+                          padding: '4px 8px',
+                          borderRadius: '12px',
+                          fontSize: '10px',
+                          fontWeight: 'bold',
+                          background: device.mgmt_status?.toUpperCase().includes('UNMANAGED')
+                            ? 'var(--error)'
+                            : 'var(--success)',
+                          color: 'white'
+                        }}>
+                          {device.mgmt_status || 'Unknown'}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Footer */}
+            <div style={{
+              padding: '12px 20px',
+              borderTop: '1px solid var(--border)',
+              display: 'flex',
+              gap: '12px',
+              justifyContent: 'flex-end'
+            }}>
+              <button
+                onClick={() => setShowDevicePopup(false)}
+                className="action-btn"
+                style={{
+                  padding: '10px 24px',
+                  background: 'var(--cfx3rdlevel)',
+                  color: 'var(--text)',
+                  border: '1px solid var(--border)',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  fontSize: '13px',
+                  fontWeight: '500'
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => setShowDevicePopup(false)}
+                className="action-btn"
+                style={{
+                  padding: '10px 24px',
+                  background: 'var(--primary)',
+                  color: 'var(--text)',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  fontSize: '13px',
+                  fontWeight: 'bold'
+                }}
+              >
+                Apply Filter
+              </button>
+            </div>
           </div>
-          
-          {/* Footer */}
-          <div style={{
-            padding: '12px 20px',
-            borderTop: '1px solid var(--border)',
-            display: 'flex',
-            gap: '12px',
-            justifyContent: 'flex-end'
-          }}>
-            <button
-              onClick={() => setShowDevicePopup(false)}
-              className="action-btn"
-              style={{
-                padding: '10px 24px',
-                background: 'var(--cfx3rdlevel)',
-                color: 'var(--text)',
-                border: '1px solid var(--border)',
-                borderRadius: '4px',
-                cursor: 'pointer',
-                fontSize: '13px',
-                fontWeight: '500'
-              }}
-            >
-              Cancel
-            </button>
-            <button
-              onClick={() => setShowDevicePopup(false)}
-              className="action-btn"
-              style={{
-                padding: '10px 24px',
-                background: 'var(--primary)',
-                color: 'var(--text)',
-                border: 'none',
-                borderRadius: '4px',
-                cursor: 'pointer',
-                fontSize: '13px',
-                fontWeight: 'bold'
-              }}
-            >
-              Apply Filter
-            </button>
-          </div>
-        </div>
-      </>
-    )}
-  </div>
-);
+        </>
+      )}
+    </div>
+  );
 };
 
 export default TopologyGraph;
