@@ -2,7 +2,7 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
 // API Configuration
-const API_TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyLWlkIjoic2lyaS5rb3RoZUBjbG91ZGZhYnJpeC5jb20iLCJ3b3Jrc3BhY2VpZCI6ImFkYzVjN2MzLWVlNDQtNGU2Ni04MjIxLTg2MDYyMjU3OTZmZSIsInJkYWNfYXBpX2VuZHBvaW50IjoiaHR0cDovLzEwLjk1LjEyNS4xOTA6ODgwOCJ9.vptGeX0_jyh6IYW7hv2KnVSoWHiXvgYiKoNK5XoPvXY";
+const API_TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhY21lQGNmeC5jb20iLCJpc3MiOiIxMC45NS4xMDcuOTAiLCJleHAiOjE3NzA3NzE5NTAsImlhdCI6MTc3MDY4NTU1MCwianRpIjoiMzQ0NjFmZGMtM2QwNC00YWRlLTk2YzAtNWNjNjdiNDY3MDMzIiwid29ya3NwYWNlaWQiOiI4ZGYxZjYzZi00YzE5LTRkZjQtOTFkZS1iMDJhZTFjZDYzNzgiLCJ1c2VyLWlkIjoiYWNtZUBjZnguY29tIiwicmRhY19hcGlfZW5kcG9pbnQiOiJodHRwOi8vMTAuOTUuMTA3LjkwOjg4MDgiLCJydGkiOiI5MWVjODQzYi0wNTgwLTQyOGMtOWFkYy0xZGE4ZjFhMTNjYTMiLCJ0eXBlIjoiYWNjZXNzX3Rva2VuIn0.fnUrIWeHXsg_nc7dRBPiSsaK0EnZYjZqeMz3AXGcuNg";
 
 // Plugin to inline CSS into JS
 const inlineCSSPlugin = () => {
@@ -13,16 +13,16 @@ const inlineCSSPlugin = () => {
     generateBundle(options, bundle) {
       // Find CSS files
       const cssFiles = Object.keys(bundle).filter(fileName => fileName.endsWith('.css'));
-      
+
       // Find JS entry file
-      const jsFile = Object.keys(bundle).find(fileName => 
+      const jsFile = Object.keys(bundle).find(fileName =>
         fileName.endsWith('.js') && bundle[fileName].isEntry
       );
-      
+
       if (cssFiles.length && jsFile) {
         // Get CSS content
         const cssContent = cssFiles.map(fileName => bundle[fileName].source).join('\n');
-        
+
         // Popup positioning code - must be at the very top before everything else
         const popupCode = `
 // Dynamic Popup Positioning Utility
@@ -100,7 +100,7 @@ window.getOptimalPopupPosition = function(initialX, initialY, popupWidth = 400, 
     popupFixer.init();
   }
 `;
-        
+
         // Prepend CSS injection code to JS
         const cssInjectionCode = `
 (function() {
@@ -110,7 +110,7 @@ window.getOptimalPopupPosition = function(initialX, initialY, popupWidth = 400, 
 })();
 `;
         bundle[jsFile].code = popupCode + cssInjectionCode + bundle[jsFile].code;
-        
+
         // Remove CSS files from bundle
         cssFiles.forEach(fileName => delete bundle[fileName]);
       }
@@ -129,13 +129,13 @@ export default defineConfig({
     port: 5173,
     proxy: {
       '/api/v2': {
-        target: 'https://10.95.125.190',
+        target: 'https://10.95.107.90',
         changeOrigin: true,
         secure: false, // Allow self-signed certificates
         rewrite: (path) => path
       },
       '/api': {
-        target: 'https://10.95.125.190',
+        target: 'https://10.95.107.90',
         changeOrigin: true,
         secure: false, // Allow self-signed certificates
         rewrite: (path) => path

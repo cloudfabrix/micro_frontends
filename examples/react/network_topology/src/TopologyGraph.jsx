@@ -62,6 +62,61 @@ const getResponseData = (response) => {
 }
 
 
+const getTemplateVariable = (varName, altNames = []) => {
+  // const contextIdMap = { "CUST_TAG": "customerTag" };
+  // const contextId = contextIdMap[varName] || "customerTag";
+
+  try {
+    if (window.location && window.location.search) {
+      console.log("URL:", window.location.search);
+      const urlParams = new URLSearchParams(window.location.search);
+      console.log("URL Params:", urlParams);
+      let tabstr = urlParams.get('tabs');
+      console.log("Tab string:", tabstr);
+      if (!tabstr) {
+        const context_bytes = urlParams.get('context');
+        if (context_bytes) {
+          console.log("Context bytes:", atob(context_bytes));
+          const context = JSON.parse(atob(context_bytes));
+          console.log("Context:", context);
+          if (context[varName]) {
+            return context[varName];
+          } else {
+            for (const altName of altNames) {
+              if (context[altName]) {
+                return context[altName];
+              }
+            }
+          }
+        }
+      }
+      if (tabstr) {
+        try {
+          const decodedContext = JSON.parse(tabstr);
+          const context = decodedContext[decodedContext.length - 1]["appMetadata"]["contexts"];
+          // console.log("Context:", context);
+          // console.log("Context ID:", varName);
+          if (context[varName]) {
+            return context[varName];
+          } else {
+            for (const altName of altNames) {
+              if (context[altName]) {
+                return context[altName];
+              }
+            }
+          }
+        } catch (e) {
+          console.warn("Failed to decode context from URL:", e);
+        }
+      }
+    }
+  } catch (e) {
+    console.warn("Error getting template variable:", varName, e);
+  }
+
+  return null;
+}
+
 const TopologyGraph = () => {
   const [cy, setCy] = useState(null);
   const [elements, setElements] = useState([]);
@@ -94,6 +149,7 @@ const TopologyGraph = () => {
   const [showSaveViewDialog, setShowSaveViewDialog] = useState(false); // Show/hide save view dialog
   const [newViewName, setNewViewName] = useState(''); // Name for new view
   const [showViewsMenu, setShowViewsMenu] = useState(false); // Show/hide views dropdown
+  const [showIsolatedNodes, setShowIsolatedNodes] = useState(true); // Show/hide nodes without edges
 
   // Link type filters
   const [linkTypeFilters, setLinkTypeFilters] = useState({
@@ -227,69 +283,81 @@ const TopologyGraph = () => {
     async function fetchGraph() {
       // Use the Vite proxy to avoid CORS issues. The proxy will forward
       // requests from /api to https://10.95.125.190/api
-      const baseUrl = "/api/portal/rdac/browseapi", headers = (() => {
+      const baseUrl = "/api/portal/rdac/browseapi"
+      const headers = (() => {
         const h = {};
         if (import.meta.env.DEV) {
           h.Authorization = `Bearer ${import.meta.env.VITE_API_TOKEN}`;
         }
         return h;
-      })(), getTemplateVariable = async (varName, altNames = []) => {
-        const contextIdMap = { "CUST_TAG": "customerTag" };
-        const contextId = contextIdMap[varName] || "customerTag";
-
-        try {
-          if (window.location && window.location.search) {
-            const urlParams = new URLSearchParams(window.location.search);
-            const contextParam = urlParams.get('context');
-
-            if (contextParam) {
-              try {
-                const decodedContext = JSON.parse(atob(contextParam));
-                console.log("Decoded context from URL:", decodedContext);
-
-                if (decodedContext[contextId]) {
-                  console.log(`Found ${contextId} in URL context:`, decodedContext[contextId]);
-                  return decodedContext[contextId];
-                }
-              } catch (e) {
-                console.warn("Failed to decode context from URL:", e);
-              }
-            }
-          }
-        } catch (e) {
-          console.warn("Error getting template variable:", varName, e);
-        }
-
-        return null;
-      }, custTag = await getTemplateVariable("CUST_TAG", ["customerTag", "customer_tag"]), escapeAqlString = (str) => {
-        if (!str) return "''";
-        return `'${String(str).replace(/'/g, "''").replace(/\\/g, "\\\\")}'`;
-      }, buildNodeFilter = (tag) => {
-        const nodeTypeFilter = `(n.node_type IN ['CHASSIS', 'Chassis', 'chassis'])`;
-        const layerFilter = `(n.layer IN ['NETWORK', 'Network', 'network'])`;
-        const baseFilter = `${nodeTypeFilter} AND ${layerFilter}`;
-        if (tag) {
-          const customerTagFilter = `(n.customer_tag == ${escapeAqlString(tag)} OR n.customer_tag == null OR n.customer_tag == '')`;
-          return `(${baseFilter} AND ${customerTagFilter})`;
-        }
-        return baseFilter;
-      }, buildEdgeFilter = (tag) => {
-        const linkFilter = `e.link_type IN ['CDP','LLDP','ISIS','OSPF','BGP']`;
-        if (tag) {
-          return `((e.customer_tag == ${escapeAqlString(tag)} OR e.customer_tag == null OR e.customer_tag == '') AND ${linkFilter})`;
-        }
-        return `${linkFilter}`;
-      }, nodeFilter = buildNodeFilter(custTag), edgeFilter = buildEdgeFilter(custTag);
-
+      })()
+      const custTag = getTemplateVariable("CUST_TAG", ["customerTag", "customer_tag"])
       console.log("Template variable CUST_TAG resolved to:", custTag || "(null/empty - showing all customers)");
       if (!custTag) {
         console.warn("⚠️ CUST_TAG not found! Please check:");
-        console.log("1. Run in console: Object.keys(window).filter(k => k.toLowerCase().includes('customer') || k.toLowerCase().includes('tag') || k.toLowerCase().includes('context'))");
-        console.log("2. Check URL params:", window.location.search);
-        console.log("3. Check parent window:", window.parent !== window ? "Parent exists" : "No parent");
-        console.log("4. All window keys with 'context', 'template', or 'dashboard':", Object.keys(window).filter(k => /context|template|dashboard/i.test(k)));
-        console.log("5. Try: window.customerTag, window.CUST_TAG, window.dashboardContext?.customerTag");
       }
+
+      const escapeAqlString = (str) => {
+        if (!str) return "''";
+        return `'${String(str).replace(/'/g, "''").replace(/\\/g, "\\\\")}'`;
+      }
+      const targetIp = getTemplateVariable("target_ip", []);
+      const selectedNodeId = targetIp ? targetIp + "_CHASSIS" : "";
+      const buildEdgeFilter = (tag) => {
+        console.log("Selected node ID:", selectedNodeId);
+        const linkFilter = `e.link_type IN ['CDP','LLDP','ISIS','OSPF','BGP']`;
+        var filter = linkFilter;
+        if (selectedNodeId) {
+          filter += ` AND (e.right_id == ${escapeAqlString(selectedNodeId)} OR e.left_id == ${escapeAqlString(selectedNodeId)})`;
+        }
+        if (tag) {
+          const customerTagFilter = `(e.customer_tag == ${escapeAqlString(tag)} OR e.customer_tag == null OR e.customer_tag == '')`;
+          return `(${filter} AND ${customerTagFilter})`;
+        }
+        return filter;
+      }
+      const edgeFilter = buildEdgeFilter(custTag);
+      console.log("Edge Filter", edgeFilter);
+      const edgeQuery = getAqlBody(
+        edgeFilter
+          ? `FOR e IN cfx_rdaf_topology_edges FILTER ${edgeFilter} RETURN e`
+          : `FOR e IN cfx_rdaf_topology_edges FILTER e.link_type IN ['CDP','LLDP','ISIS','OSPF','BGP'] RETURN e`,
+        'cfx_rdaf_topology',
+        { customerTag: custTag, CUST_TAG: custTag }
+      );
+      var rawEdges = [];
+      try {
+        // Fire off the node and edge queries concurrently.
+        const [edgeRes] = await Promise.all([
+          axios.post(`${baseUrl}`, edgeQuery, { headers }),
+        ]);
+        rawEdges = getResponseData(edgeRes.data);
+      } catch (err) {
+        console.error('Failed to load edges:', err);
+      }
+      console.log("Raw Edges", rawEdges);
+      const selectedNodes = Array.from(new Set(rawEdges.flatMap(e => [e.left_id, e.right_id])));
+
+
+      const buildNodeFilter = (tag) => {
+        console.log("Selected node ID:", selectedNodeId);
+        const nodeTypeFilter = `(n.node_type IN ['CHASSIS', 'Chassis', 'chassis'])`;
+        const layerFilter = `(n.layer IN ['NETWORK', 'Network', 'network'])`;
+        const baseFilter = `${nodeTypeFilter} AND ${layerFilter}`;
+        var filter = baseFilter;
+        if (selectedNodeId) {
+          // Use the pre-fetched selectedNodes (from edges) to filter nodes
+          // n.node_id IN [...] is more efficient than a subquery when we already have the data
+          filter += ` AND n.node_id IN ${JSON.stringify(selectedNodes)}`;
+        }
+        if (tag) {
+          const customerTagFilter = `(n.customer_tag == ${escapeAqlString(tag)} OR n.customer_tag == null OR n.customer_tag == '')`;
+          return `(${filter} AND ${customerTagFilter})`;
+        }
+        return filter;
+      }
+      const nodeFilter = buildNodeFilter(custTag)
+      console.log("Node Filter", nodeFilter);
 
       // Define AQL queries to retrieve nodes and edges from ArangoDB with customer tag filtering
       const nodeQuery = getAqlBody(
@@ -299,23 +367,14 @@ const TopologyGraph = () => {
         'cfx_rdaf_topology',
         { customerTag: custTag, CUST_TAG: custTag }
       );
-      const edgeQuery = getAqlBody(
-        edgeFilter
-          ? `FOR e IN cfx_rdaf_topology_edges FILTER ${edgeFilter} RETURN e`
-          : `FOR e IN cfx_rdaf_topology_edges FILTER e.link_type IN ['CDP','LLDP','ISIS','OSPF','BGP'] RETURN e`,
-        'cfx_rdaf_topology',
-        { customerTag: custTag, CUST_TAG: custTag }
-      );
-
       try {
         // Fire off the node and edge queries concurrently.
-        const [nodeRes, edgeRes] = await Promise.all([
+        const [nodeRes] = await Promise.all([
           axios.post(`${baseUrl}`, nodeQuery, { headers }),
-          axios.post(`${baseUrl}`, edgeQuery, { headers }),
         ]);
         const rawNodes = getResponseData(nodeRes.data);
-        const rawEdges = getResponseData(edgeRes.data);
-        console.log("Raw Nodes", rawNodes);
+        // console.log("Raw Nodes", rawNodes);
+        // console.log("Raw Edges", rawEdges);
         // Map raw node documents into the Cytoscape format.
         const nodes = rawNodes.map((n) => {
           // Determine a unique ID for each node. Use `_key` if available, else
@@ -382,7 +441,7 @@ const TopologyGraph = () => {
                 holdtime: e.holdtime || null,
               }
             };
-            //   console.log("Edge111", edge.data.id, edge.data.source, edge.data.target);
+            // console.log("Edge111", edge.data.id, edge.data.source, edge.data.target, edge.data.link_type);
             return edge;
           })
           // Filter out edges where either source or target node doesn't exist
@@ -645,7 +704,7 @@ const TopologyGraph = () => {
   // Fetch alert counts for all devices
   useEffect(() => {
     async function fetchAlertCounts() {
-      console.log('[ALERT BADGE DEBUG] Alert count fetch useEffect triggered - allDevices.length:', allDevices.length);
+      // console.log('[ALERT BADGE DEBUG] Alert count fetch useEffect triggered - allDevices.length:', allDevices.length);
       if (allDevices.length === 0) {
         console.log('[ALERT BADGE DEBUG] Skipping alert fetch - allDevices is empty');
         return;
@@ -656,7 +715,7 @@ const TopologyGraph = () => {
         .map(d => d.id)
         .filter(id => id); // Filter out null/undefined IDs
 
-      console.log('[ALERT BADGE DEBUG] Node IDs to query:', nodeIds.length, 'Node IDs:', nodeIds.slice(0, 10));
+      // console.log('[ALERT BADGE DEBUG] Node IDs to query:', nodeIds.length, 'Node IDs:', nodeIds.slice(0, 10));
 
       if (nodeIds.length === 0) return;
 
@@ -679,35 +738,35 @@ const TopologyGraph = () => {
           headers.Authorization = `Bearer ${import.meta.env.VITE_API_TOKEN}`;
         }
 
-        console.log('[ALERT BADGE DEBUG] Fetching alert counts from:', baseUrl, 'query:', cfxqlQuery, 'Using a_en_node_id (matching topology dashboard)');
+        // console.log('[ALERT BADGE DEBUG] Fetching alert counts from:', baseUrl, 'query:', cfxqlQuery, 'Using a_en_node_id (matching topology dashboard)');
         const response = await axios.get(`${baseUrl}?${params.toString()}`, { headers });
 
-        console.log('[ALERT BADGE DEBUG] Full API response:', JSON.stringify(response?.data, null, 2));
-        console.log('[ALERT BADGE DEBUG] Alert API response structure:', {
-          hasPstreamSeriesData: !!response?.data?.pstream_series_data,
-          pstreamSeriesDataLength: response?.data?.pstream_series_data?.length,
-          hasServiceResult: !!response?.data?.serviceResult,
-          hasData: !!response?.data?.serviceResult?.data,
-          hasSeries: !!response?.data?.serviceResult?.data?.series,
-          seriesLength: response?.data?.serviceResult?.data?.series?.length,
-          responseKeys: Object.keys(response?.data || {})
-        });
+        // console.log('[ALERT BADGE DEBUG] Full API response:', JSON.stringify(response?.data, null, 2));
+        // console.log('[ALERT BADGE DEBUG] Alert API response structure:', {
+        //   hasPstreamSeriesData: !!response?.data?.pstream_series_data,
+        //   pstreamSeriesDataLength: response?.data?.pstream_series_data?.length,
+        //   hasServiceResult: !!response?.data?.serviceResult,
+        //   hasData: !!response?.data?.serviceResult?.data,
+        //   hasSeries: !!response?.data?.serviceResult?.data?.series,
+        //   seriesLength: response?.data?.serviceResult?.data?.series?.length,
+        //   responseKeys: Object.keys(response?.data || {})
+        // });
 
         // Parse the response - use pstream_series_data instead of serviceResult.data.series
         const series = response?.data?.pstream_series_data || [];
-        console.log('[ALERT BADGE DEBUG] Raw series data:', series.slice(0, 5));
+        // console.log('[ALERT BADGE DEBUG] Raw series data:', series.slice(0, 5));
         const counts = {};
 
         series.forEach(item => {
           const nodeId = item.group?.[0];
           const count = item.values?.[0]?.value || 0;
-          console.log('[ALERT BADGE DEBUG] Processing series item - Node ID:', nodeId, 'Count:', count, 'Full item:', item);
+          // console.log('[ALERT BADGE DEBUG] Processing series item - Node ID:', nodeId, 'Count:', count, 'Full item:', item);
           if (nodeId) {
             counts[nodeId] = count;
           }
         });
 
-        console.log('[ALERT BADGE DEBUG] Setting alert counts state - counts:', counts, 'Keys:', Object.keys(counts), 'Total node IDs with alerts:', Object.keys(counts).length);
+        // console.log('[ALERT BADGE DEBUG] Setting alert counts state - counts:', counts, 'Keys:', Object.keys(counts), 'Total node IDs with alerts:', Object.keys(counts).length);
         setAlertCounts(counts);
         console.log('Alert counts fetched:', counts);
       } catch (error) {
@@ -796,14 +855,13 @@ const TopologyGraph = () => {
         connectedNodeIds.add(edge.data.target);
       });
 
-      // Keep only nodes that have at least one connection
-      // BUT: If user explicitly selected devices, show them even without connections
+      // Keep nodes based on connection status and global flag
       let finalNodes;
-      if (selectedDevices.length > 0) {
-        // When devices are explicitly selected, show all selected nodes even if disconnected
+      if (selectedDevices.length > 0 || showIsolatedNodes) {
+        // When devices are explicitly selected OR showIsolatedNodes is true, show all filtered nodes
         finalNodes = filteredNodes;
       } else {
-        // For other filters, only show nodes with connections
+        // Otherwise, only show nodes with connections
         finalNodes = filteredNodes.filter(node => connectedNodeIds.has(node.data.id));
       }
 
@@ -949,10 +1007,10 @@ const TopologyGraph = () => {
       return;
     }
 
-    console.log('[ALERT BADGE DEBUG] setupAlertBadges starting - alertCounts:', alertCounts, 'alertCounts keys:', Object.keys(alertCounts), 'cy.nodes().length:', cy?.nodes()?.length);
+    // console.log('[ALERT BADGE DEBUG] setupAlertBadges starting - alertCounts:', alertCounts, 'alertCounts keys:', Object.keys(alertCounts), 'cy.nodes().length:', cy?.nodes()?.length);
 
     const setupAlertBadges = () => {
-      console.log('[ALERT BADGE DEBUG] setupAlertBadges executing - alertCounts:', alertCounts, 'total nodes:', cy.nodes().length);
+      // console.log('[ALERT BADGE DEBUG] setupAlertBadges executing - alertCounts:', alertCounts, 'total nodes:', cy.nodes().length);
 
       // Clean up existing alert badges and their listeners
       document.querySelectorAll('.alert-badge').forEach(el => {
@@ -1083,8 +1141,8 @@ const TopologyGraph = () => {
       });
 
       console.log('[ALERT BADGE DEBUG] Badge creation complete - Created:', badgesCreated, 'Skipped:', badgesSkipped, 'Total nodes:', nodeIPs.length);
-      console.log('[ALERT BADGE DEBUG] Node IDs vs Alert Counts:', nodeIPs.slice(0, 10), 'alertCounts keys (node IDs):', Object.keys(alertCounts).slice(0, 10));
-      console.log('[ALERT BADGE DEBUG] Sample node data:', nodeIPs.filter(n => n.alertCount > 0).slice(0, 5));
+      // console.log('[ALERT BADGE DEBUG] Node IDs vs Alert Counts:', nodeIPs.slice(0, 10), 'alertCounts keys (node IDs):', Object.keys(alertCounts).slice(0, 10));
+      // console.log('[ALERT BADGE DEBUG] Sample node data:', nodeIPs.filter(n => n.alertCount > 0).slice(0, 5));
     };
 
     // Use a slightly longer timeout to ensure DOM and Cytoscape are ready after detail panel toggle
@@ -1463,6 +1521,10 @@ const TopologyGraph = () => {
     }
   };
 
+  const toggleIsolatedNodes = () => {
+    setShowIsolatedNodes(!showIsolatedNodes);
+  };
+
   return (
     <div style={{ width: '100vw', height: '100vh', position: 'relative', background: 'var(--bg)' }}>
       <style>{`
@@ -1636,6 +1698,13 @@ const TopologyGraph = () => {
                 <input type="radio" name="labelDisplayMode" value="ip" checked={labelDisplayMode === 'ip'}
                   onChange={(e) => setLabelDisplayMode(e.target.value)} style={{ cursor: 'pointer' }} />
                 <span>IP</span>
+              </label>
+            </div>
+            <div style={{ display: 'flex', gap: '12px', fontSize: '11px', marginTop: '8px', borderTop: '1px solid var(--border)', paddingTop: '8px' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }}>
+                <input type="checkbox" checked={showIsolatedNodes}
+                  onChange={() => setShowIsolatedNodes(!showIsolatedNodes)} style={{ cursor: 'pointer' }} />
+                <span>Show Isolated Nodes</span>
               </label>
             </div>
           </div>
