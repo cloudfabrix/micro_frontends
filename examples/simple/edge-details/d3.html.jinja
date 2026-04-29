@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>D3 Nodes with Icons and Labels</title>
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+    }
+    html, body, .container {
+      height: 100%;
+    }
+    svg {
+      display: flex;
+      justify-self: center;
+      align-self: center;
+      height: 100%;
+      width: 100%;
+    }
+    .link {
+      stroke: #888;
+      stroke-width: 2;
+      fill: none;
+    }
+    .node circle {
+      fill: #69b3a2;
+      stroke: #333;
+      stroke-width: 1.5;
+    }
+    .icon {
+      font-size: 18px;
+      pointer-events: none;
+    }
+    .label {
+      font: 12px sans-serif;
+      fill: #000;
+      pointer-events: none;
+    }
+    .edge-label {
+      font: 12px sans-serif;
+      fill: #000;
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <svg viewBox="70 300 600 160" preserveAspectRatio="xMidYMid meet"></svg>
+  </div>
+  <script id="context-data" type="application/json">
+    {{ all_variables.get("context") | tojson }}
+  </script>
+
+  <script>
+    // get context from jinja all_variables (parsed from JSON script tag)
+    const context = (() => {
+        const el = document.getElementById("context-data");
+        if (!el) return null;
+        try { return JSON.parse(el.textContent || "null"); } catch { return null; }
+    })();
+    let left_id, right_id;
+    console.log("MSB context", context)
+
+    const appendErrorText = (text) => {
+        d3.select("svg").append("text")
+        .attr("x", 300)
+        .attr("y", 400)
+        .attr("text-anchor", "middle")
+        .attr("font-size", "18px")
+        .text(text || "Something went wrong");
+    }
+    const setContextToApiEndpoint = (api_endpoint) => {
+        if(!context){
+            throw new Error("No context found");
+        }
+        left_id = context?.displayAttributes?.find(attr => attr.key === "left_id")?.value;
+        right_id = context?.displayAttributes?.find(attr => attr.key === "right_id")?.value;
+
+        if(!left_id || !right_id){
+            throw new Error("No left or right id found");
+        }
+        api_endpoint.serviceRequestDescriptor.params.params[0].context = context;
+        api_endpoint.serviceRequestDescriptor.params.params[0].context.node_list = [
+            {
+                "node_id": left_id
+            },
+            {
+                "node_id": right_id
+            }
+        ]
+        api_endpoint.serviceRequestDescriptor.params.params[0].stack_type = "dynamic";
+        api_endpoint.serviceRequestDescriptor.params.params[0].stack_definition = api_endpoint.serviceRequestDescriptor.params.params[0].context.stack_definition;
+        if(api_endpoint.serviceRequestDescriptor.params.params[0].context.name){
+            delete api_endpoint.serviceRequestDescriptor.params.params[0].context.name;
+        }
+    }
+    async function fetchData() {
+        const api_url = "/api/portal/rdac/browseapi";
+        const api_endpoint = {
+            serviceRequestDescriptor: {
+                "serviceName": "saas-reports",
+                "version": "*",
+                "params": {
+                "params": [
+                    {
+                        "dashboardId": "Topology",
+                        "reportId": "rda.saas.stack.view.topo"
+                    }
+                ]
+                },
+                "methodName": "getReport",
+                "ignoreCall": true,
+                "parseOutput": true
+            }
+        };
+        setContextToApiEndpoint(api_endpoint);
+        try {
+            console.log("MSB Making request to", api_url, api_endpoint)
+            const response = await fetch(api_url, {
+            method: "POST",
+            body: JSON.stringify(api_endpoint),
+            headers: {
+                "Content-Type": "application/json",
+            },
+            });
+            const data = await response.json();
+            return data.serviceResult?.data?.dataFlowGraph;
+        } catch (error) {
+            console.error("Fetch error:", error);
+            appendErrorText("Failed to fetch data");
+        }
+    }
+
+    fetchData().then((data) => { 
+        const relationships = data?.relationships;
+        const components = data?.components;
+        if (!relationships || relationships?.length === 0) {
+            appendErrorText("No data to display");
+            return;
+        }
+
+        const leftNode = components.find(component => component.id === left_id);
+        const rightNode = components.find(component => component.id === right_id);
+
+        // filter out edges/relationships
+        const filteredRelationships = relationships.filter(relationship => {
+            return (relationship.left_id === left_id &&
+            relationship.right_id === right_id)
+        })
+
+        console.log("MSB data", filteredRelationships, leftNode, rightNode)
+
+        const nodesMap = {};
+        filteredRelationships.forEach((d) => {
+            nodesMap[d.left_id] = { id: d.left_id, label: leftNode?.label };
+            nodesMap[d.right_id] = { id: d.right_id, label: rightNode?.label };
+        });
+        const nodes = Object.values(nodesMap);
+
+        const linkGroups = {};
+        filteredRelationships.forEach((d) => {
+            const key = `${d.left_id}-${d.right_id}`;
+            if (!linkGroups[key]) linkGroups[key] = [];
+            linkGroups[key].push({ ...d, groupIndex: linkGroups[key].length });
+        });
+        const links = Object.values(linkGroups).flat();
+
+        const edgeGroups = {};
+        links.forEach((link) => {
+            const pairKey = [link.left_id, link.right_id].sort().join("__");
+            if (!edgeGroups[pairKey]) edgeGroups[pairKey] = [];
+            edgeGroups[pairKey].push(link);
+        });
+
+        Object.values(edgeGroups).forEach((group) => {
+            const mid = Math.floor(group.length / 2);
+            group.forEach((link, i) => {
+            link.groupIndex = i - mid;
+            if (group.length % 2 === 0 && i >= mid) link.groupIndex += 1;
+            });
+        });
+
+        const nodePositions = {};
+        const centerX = 400;
+        const centerY = 400;
+        const radius = 150;
+
+        nodes.forEach((node, i) => {
+            const angle = (i / nodes.length) * 2 * Math.PI;
+            nodePositions[node.id] = {
+                x: centerX + radius * Math.cos(angle),
+                y: centerY + radius * Math.sin(angle),
+            };
+        });
+
+        const svg = d3.select("svg");
+
+        // Define arrowhead marker for links
+        const defs = svg.append("defs");
+        defs.append("marker")
+            .attr("id", "arrowhead")
+            .attr("viewBox", "0 -5 10 10")
+            .attr("refX", 15)
+            .attr("refY", 0)
+            .attr("markerWidth", 6)
+            .attr("markerHeight", 6)
+            .attr("orient", "auto")
+            .attr("markerUnits", "strokeWidth")
+            .append("path")
+            .attr("d", "M0,-5L10,0L0,5")
+            .attr("fill", "#888");
+
+        // Draw links
+        svg.selectAll("path.link")
+            .data(links)
+            .enter()
+            .append("path")
+            .attr("class", "link")
+            .attr("id", (d, i) => "link" + i)
+            .attr("fill", "none")
+            .attr("stroke", "#888")
+            .attr("stroke-width", 2)
+            .attr("marker-end", "url(#arrowhead)")
+            .attr("d", (d) => {
+                const s = nodePositions[d.left_id];
+                const t = nodePositions[d.right_id];
+                const offset = d.groupIndex * 40;
+                const mx = (s.x + t.x) / 2;
+                const my = (s.y + t.y) / 2 + offset;
+                return `M${s.x},${s.y} Q${mx},${my} ${t.x},${t.y}`;
+            });
+
+        // Edge labels
+        const edgeLabelGroups = svg
+            .selectAll(".edge-label-group")
+            .data(links)
+            .enter()
+            .append("g")
+            .attr("class", "edge-label-group")
+            .attr("transform", (d) => {
+                const s = nodePositions[d.left_id];
+                const t = nodePositions[d.right_id];
+                const offset = d.groupIndex * 40;
+                const cx = (s.x + t.x) / 2;
+                const cy = (s.y + t.y) / 2 + offset;
+                return `translate(${cx},${cy})`;
+            });
+
+        const padding = 6;
+        const textElements = edgeLabelGroups
+            .append("text")
+            .attr("class", "edge-label")
+            .attr("text-anchor", "middle")
+            .attr("dominant-baseline", "middle")
+            .attr("font-size", "11px")
+            .text((d) => d.relation_type);
+
+        textElements.each(function () {
+            const bbox = this.getBBox();
+            d3.select(this.parentNode)
+            .insert("rect", "text")
+            .attr("x", bbox.x - padding)
+            .attr("y", bbox.y - padding)
+            .attr("width", bbox.width + 2 * padding)
+            .attr("height", bbox.height + 2 * padding)
+            .attr("rx", 6)
+            .attr("fill", "#fff")
+            .attr("stroke", "#333")
+            .attr("stroke-width", 1);
+        });
+
+        // Draw nodes
+        const nodeGroup = svg
+            .selectAll("g.node")
+            .data(nodes)
+            .enter()
+            .append("g")
+            .attr("class", "node")
+            .attr("transform", (d) => {
+                const pos = nodePositions[d.id];
+                return `translate(${pos.x},${pos.y})`;
+            });
+
+        nodeGroup.append("circle").attr("r", 35);
+
+        nodeGroup
+            .append("text")
+            .attr("class", "icon")
+            .attr("text-anchor", "middle")
+            .attr("dy", "0.35em")
+            .text("🖧");
+
+        nodeGroup
+            .append("text")
+            .attr("class", "label")
+            .attr("text-anchor", "middle")
+            .attr("dy", "4em")
+            .text((d) => d.label);
+    }).catch((error) => {
+        appendErrorText(error?.message || "Failed to fetch data");
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,602 @@
+{# Jinja code start #}
+{#
+get_topology_data usage (given by Purvi):
+get_topology_data(stack_name=None, node_list=None, query=None, relation_map=None, graph_name=None, db_name=None, nodes_collection=None, edges_collection=None).
+#}
+
+{# Get all variables from fixed variables #}
+{% set context = all_variables.context %}
+{% set stack_name = all_variables.fixed_variables.stack_name %}
+{% set nodes_collection = all_variables.fixed_variables.nodes_collection %}
+{% set edges_collection = all_variables.fixed_variables.edges_collection %}
+{% set graph_name = all_variables.fixed_variables.graph_name %}
+{% set relation_map = all_variables.fixed_variables.relation_map %}
+{% set node_id = context.node_id %}
+
+{% set all_variables_json = all_variables | tojson %}
+
+
+{# Get the topology data using the reporting engine #}
+{% set topology_data = engine.get_topology_data(stack_name=stack_name, node_list=[node_id], nodes_collection=nodes_collection, edges_collection=edges_collection, graph_name=graph_name, relation_map=relation_map) %}
+
+{# Convert topology data to JSON #}
+{% set topology_data_json = topology_data | tojson %}
+
+{# Jinja code end #}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Relations View</title>
+    <style>
+        /*
+         * Embedded in an iframe inside a widget: `vh` / sticky use the iframe viewport.
+         * Only `body` scrolls — `html` is fixed to the iframe height so the root element
+         * does not get its own scrollbar (avoids `html` vs `body` double-scroll behavior).
+         */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        html {
+            height: 100%;
+            width: 100%;
+            overflow: hidden;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f5f5f5;
+            height: 100%;
+            width: 100%;
+            margin: 0;
+            overflow-x: hidden;
+            overflow-y: auto;
+            overscroll-behavior: contain;
+            -webkit-overflow-scrolling: touch;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 100%;
+            min-height: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+
+        .graph-container {
+            width: 100%;
+            max-width: 100%;
+            height: auto;
+            background-color: white;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            display: flex;
+            align-items: stretch;
+            justify-content: flex-start;
+            padding: 20px;
+            box-sizing: border-box;
+            overflow-x: visible;
+            overflow-y: visible;
+        }
+
+        /* Only the connections column: wrapping hub-focal here would break `position: sticky`
+           (overflow on an ancestor between sticky el and scrolling body). */
+        .hub-graph-inner {
+            flex: 1;
+            min-width: 0;
+            max-width: 100%;
+            overflow-x: auto;
+            overscroll-behavior-x: contain;
+        }
+
+        .hub-layout {
+            display: flex;
+            flex-direction: row;
+            align-items: stretch;
+            width: 100%;
+            min-height: 180px;
+            flex: 1;
+        }
+
+        /* One peer: vertically center focal with the right node. No sticky / `top` — those
+           use the iframe viewport and fight flex centering. */
+        .hub-layout.hub-layout--single-peer {
+            align-items: center;
+        }
+
+        .hub-layout.hub-layout--single-peer .hub-focal {
+            align-self: center;
+            position: static;
+        }
+
+        .hub-focal {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            padding-right: 16px;
+            align-self: flex-start;
+            position: sticky;
+            /* iframe viewport: vh = iframe height; keeps focal near vertical center while scrolling */
+            top: max(24px, calc(50vh - 80px));
+            z-index: 2;
+        }
+
+        .hub-connections {
+            display: flex;
+            flex-direction: row;
+            align-items: stretch;
+            flex: 1;
+            min-width: 0;
+        }
+
+        .hub-parallel-left {
+            flex-shrink: 0;
+            margin-right: 10px;
+        }
+
+        .hub-rows {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-start;
+            align-items: stretch;
+            gap: 40px;
+            min-width: 0;
+            padding: 8px 0 16px;
+        }
+
+        .hub-peer-row {
+            display: flex;
+            flex-direction: row;
+            align-items: center;
+            width: 100%;
+            min-width: 0;
+            padding-block: 8px;
+        }
+
+        .hub-peer-row .edges-container {
+            margin: 0 16px 0 0;
+        }
+
+        .empty-message {
+            padding: 24px;
+            color: #333;
+            font-size: 14px;
+            align-self: center;
+            margin: auto;
+        }
+
+        .node {
+            height: 100px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s ease;
+            flex-shrink: 0;
+            min-width: 80px;
+        }
+
+        .node-circle {
+            width: 60px;
+            height: 60px;
+            background-color: #e3f2fd;
+            border: 2px solid #1976d2;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s ease;
+            padding: 10px;
+        }
+
+        .node-circle img {
+            height: 100%;
+            width: 100%;
+        }
+
+        .node-label {
+            font-size: 14px;
+            font-weight: bold;
+            color: #333;
+            margin-top: 8px;
+            text-align: center;
+            width: 150px;
+            height: 40px;
+            word-break: break-word;
+        }
+
+        .edges-container {
+            display: flex;
+            align-items: stretch;
+            flex: 1;
+            min-width: 300px;
+        }
+
+        .parallel-line {
+            width: 4px;
+            background-color: #1976d2;
+            border-radius: 2px;
+            flex-shrink: 0;
+        }
+
+        .edges {
+            display: flex;
+            flex-direction: column;
+            justify-content: space-around;
+            flex: 1;
+            margin: 0 10px;
+            min-width: 0;
+        }
+
+        .edge {
+            display: flex;
+            align-items: center;
+            position: relative;
+            height: 40px;
+            margin: 5px 0;
+        }
+
+        .edge-line {
+            flex: 1;
+            height: 2px;
+            background-color: #666;
+            position: relative;
+            margin-right: 8px;
+            min-width: 0;
+        }
+
+        .edge.dotted .edge-line {
+            background: repeating-linear-gradient(
+                to right,
+                #666 0px,
+                #666 8px,
+                transparent 8px,
+                transparent 16px
+            );
+        }
+
+        .arrow {
+            width: 0;
+            height: 0;
+            position: absolute;
+            top: 50%;
+            transform: translateY(-50%);
+        }
+
+        .arrow.right {
+            border-left: 8px solid #666;
+            border-top: 6px solid transparent;
+            border-bottom: 6px solid transparent;
+            right: -2px;
+        }
+
+        .arrow.left {
+            border-right: 8px solid #666;
+            border-top: 6px solid transparent;
+            border-bottom: 6px solid transparent;
+            left: -2px;
+        }
+
+        .edge-label {
+            position: absolute;
+            top: -2px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 12px;
+            color: #333;
+            white-space: nowrap;
+        }
+
+        .interface-label {
+            position: absolute;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 10px;
+            color: #1976d2;
+            border: 1px solid currentColor;
+            background-color: color-mix(in srgb, currentColor 10%, transparent);
+            max-width: 120px;
+            text-overflow: ellipsis;
+            overflow: hidden;
+            white-space: nowrap;
+            font-weight: 500;
+        }
+
+        .interface-label.left {
+            left: 10px;
+            top: -4px;
+        }
+
+        .interface-label.right {
+            right: 20px;
+            top: -4px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container" id="relations-view">
+        <div class="graph-container" id="graph-container"></div>
+    </div>
+    <script>
+        const contextNodeId = {{ node_id | tojson }};
+        const topologyData = {{ topology_data_json | safe }};
+        const allVariables = {{ all_variables_json | safe }};
+
+        const iconMap = window.parent?.cfxIconMap || {};
+
+        function resolveIconSrc(node, map) {
+            const iconURL = node?.iconURL;
+            const nodeType = node?.node_type;
+            if (iconURL && (iconURL.startsWith('http://') || iconURL.startsWith('https://'))) {
+                return iconURL;
+            }
+            if (nodeType && map[nodeType]) {
+                return '/' + map[nodeType];
+            }
+            return '/assets/img/blueprints/canvas/empty_icon.png';
+        }
+
+        function createNodeEl(node, idSuffix) {
+            const div = document.createElement('div');
+            div.className = 'node';
+            const safeId = String(idSuffix).replace(/[^a-zA-Z0-9_-]/g, '_');
+            div.id = 'node-' + safeId;
+            const label = node.node_label || node.hostname || node.node_id || '';
+            const iconSrc = resolveIconSrc(node, iconMap);
+            div.innerHTML =
+                '<div class="node-circle"><img src="" alt="" /></div><div class="node-label"></div>';
+            div.querySelector('img').src = iconSrc;
+            div.querySelector('.node-label').textContent = label;
+            return div;
+        }
+
+        function buildPseudoFocal(focusId, rels) {
+            const r = rels.find((x) => x.left_id === focusId);
+            if (r) {
+                return {
+                    node_id: focusId,
+                    node_label: r.left_label,
+                    hostname: r.left_label,
+                    node_type: r.left_node_type,
+                    iconURL: 'Not Available'
+                };
+            }
+            const r2 = rels.find((x) => x.right_id === focusId);
+            return {
+                node_id: focusId,
+                node_label: r2.right_label,
+                hostname: r2.right_label,
+                node_type: r2.right_node_type,
+                iconURL: 'Not Available'
+            };
+        }
+
+        function pseudoNodeForPeer(peerId, rels) {
+            const r = rels[0];
+            if (r.left_id === peerId) {
+                return {
+                    node_id: peerId,
+                    node_label: r.left_label,
+                    hostname: r.left_label,
+                    node_type: r.left_node_type,
+                    iconURL: 'Not Available'
+                };
+            }
+            return {
+                node_id: peerId,
+                node_label: r.right_label,
+                hostname: r.right_label,
+                node_type: r.right_node_type,
+                iconURL: 'Not Available'
+            };
+        }
+
+        function createEdgesInto(edgesContainer, relationships, focusId) {
+            relationships.forEach((relationship) => {
+                const edgeDiv = document.createElement('div');
+                edgeDiv.className = 'edge';
+                if (relationship.dotted) {
+                    edgeDiv.classList.add('dotted');
+                }
+
+                const edgeColor = relationship.edge_color || '#666';
+                const edgeLine = document.createElement('div');
+                edgeLine.className = 'edge-line';
+
+                if (relationship.dotted) {
+                    edgeLine.style.background = `repeating-linear-gradient(
+                        to right,
+                        ${edgeColor} 0px,
+                        ${edgeColor} 8px,
+                        transparent 8px,
+                        transparent 16px
+                    )`;
+                } else {
+                    edgeLine.style.backgroundColor = edgeColor;
+                }
+
+                const isRightToLeft =
+                    relationship.left_id !== focusId && relationship.right_id === focusId;
+                const isDirectionless = relationship.direction === 'NO_DIRECTION';
+
+                const arrow = document.createElement('div');
+                arrow.className = 'arrow ' + (isRightToLeft ? 'left' : 'right');
+                if (isRightToLeft) {
+                    arrow.style.borderRightColor = edgeColor;
+                } else {
+                    arrow.style.borderLeftColor = edgeColor;
+                }
+
+                const edgeLabel = document.createElement('div');
+                edgeLabel.className = 'edge-label';
+                edgeLabel.textContent =
+                    relationship.link_type || relationship.relation_type || '';
+
+                const sourceInterfaceValue =
+                    focusId === relationship.left_id
+                        ? String(relationship.local_port || '')
+                        : String(relationship.remote_port || '');
+                const destInterfaceValue =
+                    focusId === relationship.left_id
+                        ? String(relationship.remote_port || '')
+                        : String(relationship.local_port || '');
+
+                const sourceLabelColor = relationship.source_label_outline_color || '#1976d2';
+                const destLabelColor = relationship.dest_label_outline_color || '#1976d2';
+
+                let sourceInterfaceLabel;
+                if (sourceInterfaceValue) {
+                    sourceInterfaceLabel = document.createElement('p');
+                    sourceInterfaceLabel.title = sourceInterfaceValue;
+                    sourceInterfaceLabel.className =
+                        'interface-label ' + (isRightToLeft ? 'right' : 'left');
+                    sourceInterfaceLabel.textContent = sourceInterfaceValue;
+                    sourceInterfaceLabel.style.color = sourceLabelColor;
+                }
+
+                let destInterfaceLabel;
+                if (destInterfaceValue) {
+                    destInterfaceLabel = document.createElement('p');
+                    destInterfaceLabel.title = destInterfaceValue;
+                    destInterfaceLabel.className =
+                        'interface-label ' + (isRightToLeft ? 'left' : 'right');
+                    destInterfaceLabel.textContent = destInterfaceValue;
+                    destInterfaceLabel.style.color = destLabelColor;
+                }
+
+                if (!isDirectionless) {
+                    edgeLine.appendChild(arrow);
+                }
+                edgeDiv.appendChild(edgeLine);
+                edgeDiv.appendChild(edgeLabel);
+                if (sourceInterfaceLabel) {
+                    edgeDiv.appendChild(sourceInterfaceLabel);
+                }
+                if (destInterfaceLabel) {
+                    edgeDiv.appendChild(destInterfaceLabel);
+                }
+                edgesContainer.appendChild(edgeDiv);
+            });
+        }
+
+        function initGraph() {
+            const graphContainer = document.getElementById('graph-container');
+            graphContainer.innerHTML = '';
+
+            const nodes = topologyData?.stack?.nodes || [];
+            const relationships = topologyData?.stack?.relationships || [];
+            const nodeMap = new Map(nodes.map((n) => [n.node_id, n]));
+
+            if (!contextNodeId) {
+                const msg = document.createElement('div');
+                msg.className = 'empty-message';
+                msg.textContent = 'No context node selected.';
+                graphContainer.appendChild(msg);
+                return;
+            }
+
+            const filtered = relationships.filter(
+                (r) => r.left_id === contextNodeId || r.right_id === contextNodeId
+            );
+
+            if (!filtered.length) {
+                const msg = document.createElement('div');
+                msg.className = 'empty-message';
+                msg.textContent = 'No relationships to display.';
+                graphContainer.appendChild(msg);
+                return;
+            }
+
+            let focalNode = nodeMap.get(contextNodeId);
+            if (!focalNode) {
+                focalNode = buildPseudoFocal(contextNodeId, filtered);
+            }
+
+            const hubLayout = document.createElement('div');
+            hubLayout.className = 'hub-layout';
+
+            const focalCol = document.createElement('div');
+            focalCol.className = 'hub-focal';
+            focalCol.appendChild(createNodeEl(focalNode, 'focal'));
+
+            const hubConnections = document.createElement('div');
+            hubConnections.className = 'hub-connections';
+
+            const leftParallel = document.createElement('div');
+            leftParallel.className = 'parallel-line hub-parallel-left';
+
+            const rowsCol = document.createElement('div');
+            rowsCol.className = 'hub-rows';
+
+            const byPeer = new Map();
+            for (const r of filtered) {
+                const peer = r.left_id === contextNodeId ? r.right_id : r.left_id;
+                if (!byPeer.has(peer)) {
+                    byPeer.set(peer, []);
+                }
+                byPeer.get(peer).push(r);
+            }
+
+            const sortedPeers = [...byPeer.keys()].sort((a, b) =>
+                String(a).localeCompare(String(b))
+            );
+
+            if (sortedPeers.length === 1) {
+                hubLayout.classList.add('hub-layout--single-peer');
+            }
+
+            for (const peerId of sortedPeers) {
+                const rels = byPeer.get(peerId);
+                const row = document.createElement('div');
+                row.className = 'hub-peer-row';
+
+                const edgesWrap = document.createElement('div');
+                edgesWrap.className = 'edges-container';
+
+                const edgesInner = document.createElement('div');
+                edgesInner.className = 'edges';
+                const rightLine = document.createElement('div');
+                rightLine.className = 'parallel-line';
+
+                createEdgesInto(edgesInner, rels, contextNodeId);
+
+                edgesWrap.appendChild(edgesInner);
+                edgesWrap.appendChild(rightLine);
+
+                const peerNode = nodeMap.get(peerId) || pseudoNodeForPeer(peerId, rels);
+                const peerEl = createNodeEl(peerNode, peerId);
+
+                row.appendChild(edgesWrap);
+                row.appendChild(peerEl);
+                rowsCol.appendChild(row);
+            }
+
+            hubConnections.appendChild(leftParallel);
+            hubConnections.appendChild(rowsCol);
+
+            const scrollInner = document.createElement('div');
+            scrollInner.className = 'hub-graph-inner';
+            scrollInner.appendChild(hubConnections);
+
+            hubLayout.appendChild(focalCol);
+            hubLayout.appendChild(scrollInner);
+            graphContainer.appendChild(hubLayout);
+
+            console.log('topology_relations_view widget: topologyData', topologyData);
+            console.log('topology_relations_view widget: allVariables', allVariables);
+        }
+
+        initGraph();
+    </script>
+</body>
+</html>
