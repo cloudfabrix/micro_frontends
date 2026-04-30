@@ -4,23 +4,68 @@ get_topology_data usage (given by Purvi):
 get_topology_data(stack_name=None, node_list=None, query=None, relation_map=None, graph_name=None, db_name=None, nodes_collection=None, edges_collection=None).
 #}
 
-{# Get all variables from fixed variables #}
 {% set context = all_variables.context %}
-{% set stack_name = all_variables.fixed_variables.stack_name %}
-{% set nodes_collection = all_variables.fixed_variables.nodes_collection %}
-{% set edges_collection = all_variables.fixed_variables.edges_collection %}
-{% set graph_name = all_variables.fixed_variables.graph_name %}
-{% set relation_map = all_variables.fixed_variables.relation_map %}
-{% set node_id = context.node_id %}
+{% set fv = all_variables.fixed_variables | default({}) %}
 
-{% set all_variables_json = all_variables | tojson %}
+{% set stack_name = fv.stack_name | default('', true) %}
+{% if not stack_name %}
+    {% set stack_name = context.attrs_stack_name | default('', true) %}
+{% endif %}
 
+{% set config_error = none %}
+{% if not stack_name %}
+    {% set config_error = 'Stack name is required. Set fixed_variables.stack_name or context.attrs_stack_name.' %}
+{% endif %}
 
-{# Get the topology data using the reporting engine #}
-{% set topology_data = engine.get_topology_data(stack_name=stack_name, node_list=[node_id], nodes_collection=nodes_collection, edges_collection=edges_collection, graph_name=graph_name, relation_map=relation_map) %}
+{% set nodes_collection = fv.nodes_collection | default(none) %}
+{% set edges_collection = fv.edges_collection | default(none) %}
+{% set graph_name = fv.graph_name | default(none) %}
+{% set relation_map = fv.relation_map | default(none) %}
 
-{# Convert topology data to JSON #}
+{% set navigator_edges = context.navigatorWidgetContext | default([]) %}
+
+{% set node_list_raw = [] %}
+{% set layout_mode = 'hub' %}
+{% set focal_node_id = none %}
+
+{% if not config_error %}
+    {% if context.node_id is defined and context.node_id %}
+        {% set node_list_raw = [context.node_id] %}
+        {% set layout_mode = 'hub' %}
+        {% set focal_node_id = context.node_id %}
+    {% else %}
+        {% set ns_ids = namespace(ids=[]) %}
+        {% for edge in navigator_edges %}
+            {% for attr in edge.displayAttributes | default([]) %}
+                {% if attr.key in ['left_id', 'right_id'] and attr.value %}
+                    {% set _ = ns_ids.ids.append(attr.value) %}
+                {% endif %}
+            {% endfor %}
+        {% endfor %}
+        {% set node_list_raw = ns_ids.ids | unique | list %}
+        {% set layout_mode = 'edgeRows' %}
+    {% endif %}
+{% endif %}
+
+{% if not config_error and (node_list_raw | length) == 0 %}
+    {% set config_error = 'No nodes to display. Provide context.node_id or context.navigatorWidgetContext with left_id/right_id in displayAttributes.' %}
+{% endif %}
+
+{% set topology_data = {} %}
+{% if not config_error %}
+    {% set topology_data = engine.get_topology_data(
+        stack_name=stack_name,
+        node_list=node_list_raw,
+        nodes_collection=nodes_collection,
+        edges_collection=edges_collection,
+        graph_name=graph_name,
+        relation_map=relation_map
+    ) %}
+{% endif %}
+
 {% set topology_data_json = topology_data | tojson %}
+{% set all_variables_json = all_variables | tojson %}
+{% set attribute_map_override_json = fv.attributeMap | default({}) | tojson %}
 
 {# Jinja code end #}
 <!DOCTYPE html>
@@ -29,11 +74,11 @@ get_topology_data(stack_name=None, node_list=None, query=None, relation_map=None
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Relations View</title>
+    <script src="https://cdn.jsdelivr.net/npm/lodash@4.17.21/lodash.min.js"></script>
     <style>
         /*
-         * Embedded in an iframe inside a widget: `vh` / sticky use the iframe viewport.
-         * Only `body` scrolls — `html` is fixed to the iframe height so the root element
-         * does not get its own scrollbar (avoids `html` vs `body` double-scroll behavior).
+         * Embedded in an iframe inside a widget. Only `body` scrolls — `html` is fixed
+         * to the iframe height so the root element does not get its own scrollbar.
          */
         * {
             margin: 0;
@@ -49,7 +94,8 @@ get_topology_data(stack_name=None, node_list=None, query=None, relation_map=None
 
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background-color: #f5f5f5;
+            background-color: rgb(var(--v-theme-cfxcard));
+            color: rgb(var(--v-theme-cfxtext));
             height: 100%;
             width: 100%;
             margin: 0;
@@ -66,7 +112,6 @@ get_topology_data(stack_name=None, node_list=None, query=None, relation_map=None
             display: flex;
             justify-content: center;
             align-items: flex-start;
-            padding: 20px;
             box-sizing: border-box;
         }
 
@@ -74,10 +119,6 @@ get_topology_data(stack_name=None, node_list=None, query=None, relation_map=None
             width: 100%;
             max-width: 100%;
             height: auto;
-            background-color: white;
-            border: 1px solid #ddd;
-            border-radius: 8px;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
             display: flex;
             align-items: stretch;
             justify-content: flex-start;
@@ -87,8 +128,7 @@ get_topology_data(stack_name=None, node_list=None, query=None, relation_map=None
             overflow-y: visible;
         }
 
-        /* Only the connections column: wrapping hub-focal here would break `position: sticky`
-           (overflow on an ancestor between sticky el and scrolling body). */
+        /* Connections column only — hub-focal stays outside so it is not an overflow ancestor. */
         .hub-graph-inner {
             flex: 1;
             min-width: 0;
@@ -106,17 +146,6 @@ get_topology_data(stack_name=None, node_list=None, query=None, relation_map=None
             flex: 1;
         }
 
-        /* One peer: vertically center focal with the right node. No sticky / `top` — those
-           use the iframe viewport and fight flex centering. */
-        .hub-layout.hub-layout--single-peer {
-            align-items: center;
-        }
-
-        .hub-layout.hub-layout--single-peer .hub-focal {
-            align-self: center;
-            position: static;
-        }
-
         .hub-focal {
             display: flex;
             align-items: center;
@@ -124,10 +153,6 @@ get_topology_data(stack_name=None, node_list=None, query=None, relation_map=None
             flex-shrink: 0;
             padding-right: 16px;
             align-self: flex-start;
-            position: sticky;
-            /* iframe viewport: vh = iframe height; keeps focal near vertical center while scrolling */
-            top: max(24px, calc(50vh - 80px));
-            z-index: 2;
         }
 
         .hub-connections {
@@ -167,9 +192,43 @@ get_topology_data(stack_name=None, node_list=None, query=None, relation_map=None
             margin: 0 16px 0 0;
         }
 
+        .edge-rows-stack {
+            display: flex;
+            flex-direction: column;
+            gap: 40px;
+            width: 100%;
+            min-width: 0;
+        }
+
+        .edge-details-row {
+            display: flex;
+            flex-direction: row;
+            align-items: stretch;
+            width: 100%;
+            min-width: 0;
+        }
+
+        .edge-details-row > .node {
+            align-self: center;
+        }
+
+        .edge-details-row .edges-container {
+            flex: 1;
+            margin: 0 16px;
+            min-width: 300px;
+            align-self: stretch;
+            min-height: 48px;
+        }
+
+        .edge-details-row .edges {
+            justify-content: center;
+            min-height: 40px;
+        }
+
         .empty-message {
             padding: 24px;
             color: #333;
+            color: rgb(var(--v-theme-cfxtext));
             font-size: 14px;
             align-self: center;
             margin: auto;
@@ -190,6 +249,7 @@ get_topology_data(stack_name=None, node_list=None, query=None, relation_map=None
             width: 60px;
             height: 60px;
             background-color: #e3f2fd;
+            background-color: rgb(var(--v-theme-cfxcard));
             border: 2px solid #1976d2;
             border-radius: 50%;
             display: flex;
@@ -208,6 +268,7 @@ get_topology_data(stack_name=None, node_list=None, query=None, relation_map=None
             font-size: 14px;
             font-weight: bold;
             color: #333;
+            color: rgb(var(--v-theme-cfxtext));
             margin-top: 8px;
             text-align: center;
             width: 150px;
@@ -294,6 +355,7 @@ get_topology_data(stack_name=None, node_list=None, query=None, relation_map=None
             transform: translateX(-50%);
             font-size: 12px;
             color: #333;
+            color: rgb(var(--v-theme-cfxtext));
             white-space: nowrap;
         }
 
@@ -328,31 +390,111 @@ get_topology_data(stack_name=None, node_list=None, query=None, relation_map=None
         <div class="graph-container" id="graph-container"></div>
     </div>
     <script>
-        const contextNodeId = {{ node_id | tojson }};
+        const layoutMode = {{ layout_mode | tojson }};
+        const focalNodeId = {{ focal_node_id | tojson }};
+        const navigatorEdges = {{ navigator_edges | tojson }};
+        const configError = {{ config_error | tojson }};
         const topologyData = {{ topology_data_json | safe }};
         const allVariables = {{ all_variables_json | safe }};
+        const node_list_raw = {{ node_list_raw | tojson }};
+
+        const defaultAttributeMap = {
+            nodeLabel: 'node_label',
+            nodeIcon: 'node_type',
+            edgeCenterLabel: 'link_type',
+            edgeSourceLabel: 'local_port',
+            edgeDestLabel: 'remote_port',
+            edgeColor: 'edge_color',
+            edgeSourceLabelColor: 'source_label_outline_color',
+            edgeDestLabelColor: 'dest_label_outline_color'
+        };
+        const attributeMap = Object.assign(
+            {},
+            defaultAttributeMap,
+            {{ attribute_map_override_json | safe }}
+        );
 
         const iconMap = window.parent?.cfxIconMap || {};
 
-        function resolveIconSrc(node, map) {
-            const iconURL = node?.iconURL;
-            const nodeType = node?.node_type;
-            if (iconURL && (iconURL.startsWith('http://') || iconURL.startsWith('https://'))) {
-                return iconURL;
+        /** Align navigator displayAttributes values with graph left_id/right_id */
+        function normId(id) {
+            if (id == null || id === '') {
+                return '';
             }
-            if (nodeType && map[nodeType]) {
-                return '/' + map[nodeType];
+            return String(id).trim();
+        }
+
+        function relTouchesNode(r, nodeId) {
+            const n = normId(nodeId);
+            return normId(r.left_id) === n || normId(r.right_id) === n;
+        }
+
+        function peerOnRel(r, focusId) {
+            const f = normId(focusId);
+            if (normId(r.left_id) === f) {
+                return normId(r.right_id);
+            }
+            if (normId(r.right_id) === f) {
+                return normId(r.left_id);
+            }
+            return '';
+        }
+
+        function getAttributeMapValue(relationship, attributeMapKey) {
+            const key = attributeMap[attributeMapKey];
+            if (!key) {
+                return '';
+            }
+            let value = _.get(relationship, key);
+            if (value !== undefined && value !== null && value !== '') {
+                return String(value);
+            }
+            const displayAttrs = relationship.displayAttributes;
+            if (displayAttrs && Array.isArray(displayAttrs)) {
+                const displayAttr = displayAttrs.find(function (attr) {
+                    return attr.key === key;
+                });
+                if (
+                    displayAttr &&
+                    displayAttr.value !== undefined &&
+                    displayAttr.value !== null &&
+                    displayAttr.value !== ''
+                ) {
+                    return String(displayAttr.value);
+                }
+            }
+            return '';
+        }
+
+        function resolveIconSrc(node, map, amap) {
+            let nodeIcon = _.get(node, amap.nodeIcon, '');
+            // if nodeIcon is empty or "Not Available", check both node_type and iconURL
+            if(nodeIcon === "Not Available" || nodeIcon === "") {
+                nodeIcon = _.get(node, 'node_type', '');
+                if(nodeIcon === "Not Available" || nodeIcon === "") {
+                    nodeIcon = _.get(node, 'iconURL', '');
+                }
+            }
+            if (nodeIcon && (nodeIcon.startsWith('http://') || nodeIcon.startsWith('https://'))) {
+                return nodeIcon;
+            }
+            if (nodeIcon && map[nodeIcon]) {
+                return '/' + map[nodeIcon];
             }
             return '/assets/img/blueprints/canvas/empty_icon.png';
         }
 
-        function createNodeEl(node, idSuffix) {
+        function createNodeEl(node, idSuffix, amap) {
             const div = document.createElement('div');
             div.className = 'node';
             const safeId = String(idSuffix).replace(/[^a-zA-Z0-9_-]/g, '_');
             div.id = 'node-' + safeId;
-            const label = node.node_label || node.hostname || node.node_id || '';
-            const iconSrc = resolveIconSrc(node, iconMap);
+            const label =
+                _.get(node, amap.nodeLabel, '') ||
+                node.hostname ||
+                node.node_id ||
+                '';
+            const iconSrc = resolveIconSrc(node, iconMap, amap);
             div.innerHTML =
                 '<div class="node-circle"><img src="" alt="" /></div><div class="node-label"></div>';
             div.querySelector('img').src = iconSrc;
@@ -361,19 +503,33 @@ get_topology_data(stack_name=None, node_list=None, query=None, relation_map=None
         }
 
         function buildPseudoFocal(focusId, rels) {
-            const r = rels.find((x) => x.left_id === focusId);
+            const f = normId(focusId);
+            const r = rels.find(function (x) {
+                return normId(x.left_id) === f;
+            });
             if (r) {
                 return {
-                    node_id: focusId,
+                    node_id: f,
                     node_label: r.left_label,
                     hostname: r.left_label,
                     node_type: r.left_node_type,
                     iconURL: 'Not Available'
                 };
             }
-            const r2 = rels.find((x) => x.right_id === focusId);
+            const r2 = rels.find(function (x) {
+                return normId(x.right_id) === f;
+            });
+            if (!r2) {
+                return {
+                    node_id: f,
+                    node_label: f,
+                    hostname: f,
+                    node_type: '',
+                    iconURL: 'Not Available'
+                };
+            }
             return {
-                node_id: focusId,
+                node_id: f,
                 node_label: r2.right_label,
                 hostname: r2.right_label,
                 node_type: r2.right_node_type,
@@ -382,10 +538,11 @@ get_topology_data(stack_name=None, node_list=None, query=None, relation_map=None
         }
 
         function pseudoNodeForPeer(peerId, rels) {
+            const p = normId(peerId);
             const r = rels[0];
-            if (r.left_id === peerId) {
+            if (normId(r.left_id) === p) {
                 return {
-                    node_id: peerId,
+                    node_id: p,
                     node_label: r.left_label,
                     hostname: r.left_label,
                     node_type: r.left_node_type,
@@ -393,7 +550,7 @@ get_topology_data(stack_name=None, node_list=None, query=None, relation_map=None
                 };
             }
             return {
-                node_id: peerId,
+                node_id: p,
                 node_label: r.right_label,
                 hostname: r.right_label,
                 node_type: r.right_node_type,
@@ -401,32 +558,33 @@ get_topology_data(stack_name=None, node_list=None, query=None, relation_map=None
             };
         }
 
-        function createEdgesInto(edgesContainer, relationships, focusId) {
-            relationships.forEach((relationship) => {
+        function createEdgesInto(edgesContainer, relationships, focusId, amap) {
+            relationships.forEach(function (relationship) {
                 const edgeDiv = document.createElement('div');
                 edgeDiv.className = 'edge';
                 if (relationship.dotted) {
                     edgeDiv.classList.add('dotted');
                 }
 
-                const edgeColor = relationship.edge_color || '#666';
+                const edgeColor = getAttributeMapValue(relationship, 'edgeColor') || '#666';
                 const edgeLine = document.createElement('div');
                 edgeLine.className = 'edge-line';
 
                 if (relationship.dotted) {
-                    edgeLine.style.background = `repeating-linear-gradient(
-                        to right,
-                        ${edgeColor} 0px,
-                        ${edgeColor} 8px,
-                        transparent 8px,
-                        transparent 16px
-                    )`;
+                    edgeLine.style.background =
+                        'repeating-linear-gradient(to right, ' +
+                        edgeColor +
+                        ' 0px, ' +
+                        edgeColor +
+                        ' 8px, transparent 8px, transparent 16px)';
                 } else {
                     edgeLine.style.backgroundColor = edgeColor;
                 }
 
+                const focusNorm = normId(focusId);
                 const isRightToLeft =
-                    relationship.left_id !== focusId && relationship.right_id === focusId;
+                    normId(relationship.left_id) !== focusNorm &&
+                    normId(relationship.right_id) === focusNorm;
                 const isDirectionless = relationship.direction === 'NO_DIRECTION';
 
                 const arrow = document.createElement('div');
@@ -439,20 +597,26 @@ get_topology_data(stack_name=None, node_list=None, query=None, relation_map=None
 
                 const edgeLabel = document.createElement('div');
                 edgeLabel.className = 'edge-label';
-                edgeLabel.textContent =
-                    relationship.link_type || relationship.relation_type || '';
+                let centerText = getAttributeMapValue(relationship, 'edgeCenterLabel');
+                if (!centerText) {
+                    centerText = relationship.relation_type || '';
+                }
+                edgeLabel.textContent = centerText;
 
-                const sourceInterfaceValue =
-                    focusId === relationship.left_id
-                        ? String(relationship.local_port || '')
-                        : String(relationship.remote_port || '');
-                const destInterfaceValue =
-                    focusId === relationship.left_id
-                        ? String(relationship.remote_port || '')
-                        : String(relationship.local_port || '');
+                let sourceInterfaceValue;
+                let destInterfaceValue;
+                if (focusNorm === normId(relationship.left_id)) {
+                    sourceInterfaceValue = getAttributeMapValue(relationship, 'edgeSourceLabel');
+                    destInterfaceValue = getAttributeMapValue(relationship, 'edgeDestLabel');
+                } else {
+                    sourceInterfaceValue = getAttributeMapValue(relationship, 'edgeDestLabel');
+                    destInterfaceValue = getAttributeMapValue(relationship, 'edgeSourceLabel');
+                }
 
-                const sourceLabelColor = relationship.source_label_outline_color || '#1976d2';
-                const destLabelColor = relationship.dest_label_outline_color || '#1976d2';
+                const sourceLabelColor =
+                    getAttributeMapValue(relationship, 'edgeSourceLabelColor') || '#1976d2';
+                const destLabelColor =
+                    getAttributeMapValue(relationship, 'edgeDestLabelColor') || '#1976d2';
 
                 let sourceInterfaceLabel;
                 if (sourceInterfaceValue) {
@@ -489,25 +653,155 @@ get_topology_data(stack_name=None, node_list=None, query=None, relation_map=None
             });
         }
 
-        function initGraph() {
-            const graphContainer = document.getElementById('graph-container');
-            graphContainer.innerHTML = '';
-
-            const nodes = topologyData?.stack?.nodes || [];
-            const relationships = topologyData?.stack?.relationships || [];
-            const nodeMap = new Map(nodes.map((n) => [n.node_id, n]));
-
-            if (!contextNodeId) {
-                const msg = document.createElement('div');
-                msg.className = 'empty-message';
-                msg.textContent = 'No context node selected.';
-                graphContainer.appendChild(msg);
-                return;
+        function buildEdgeDetailsStrip(rels, visualLeftId) {
+            const edgesWrap = document.createElement('div');
+            edgesWrap.className = 'edges-container';
+            const leftLine = document.createElement('div');
+            leftLine.className = 'parallel-line';
+            const edgesInner = document.createElement('div');
+            edgesInner.className = 'edges';
+            const rightLine = document.createElement('div');
+            rightLine.className = 'parallel-line';
+            if (rels.length) {
+                createEdgesInto(edgesInner, rels, visualLeftId, attributeMap);
             }
+            edgesWrap.appendChild(leftLine);
+            edgesWrap.appendChild(edgesInner);
+            edgesWrap.appendChild(rightLine);
+            return edgesWrap;
+        }
 
-            const filtered = relationships.filter(
-                (r) => r.left_id === contextNodeId || r.right_id === contextNodeId
-            );
+        function isGroupId(s) {
+            return typeof s === 'string' && s.indexOf('groupNode') === 0;
+        }
+
+        function getDisplayAttrValue(edgeObj, key) {
+            const attrs = edgeObj.displayAttributes || [];
+            for (let i = 0; i < attrs.length; i++) {
+                const a = attrs[i];
+                if (a.key === key && a.value !== undefined && a.value !== null && a.value !== '') {
+                    return String(a.value);
+                }
+            }
+            return '';
+        }
+
+        /**
+         * Flatten a navigator edge into a relationship-shaped object so the existing
+         * createEdgesInto / getAttributeMapValue helpers (which read top-level fields with
+         * displayAttributes fallback) work unchanged.
+         */
+        function buildRelFromNavigatorEdge(edgeObj) {
+            const targetArrow = edgeObj.targetArrowShape;
+            const sourceArrow = edgeObj.sourceArrowShape;
+            const hasArrow =
+                (targetArrow && targetArrow !== 'none') || (sourceArrow && sourceArrow !== 'none');
+            return {
+                left_id: getDisplayAttrValue(edgeObj, 'left_id'),
+                right_id: getDisplayAttrValue(edgeObj, 'right_id'),
+                left_label: getDisplayAttrValue(edgeObj, 'left_label'),
+                right_label: getDisplayAttrValue(edgeObj, 'right_label'),
+                relation_type: getDisplayAttrValue(edgeObj, 'relation_type'),
+                link_type: getDisplayAttrValue(edgeObj, 'link_type'),
+                local_port: getDisplayAttrValue(edgeObj, 'local_port'),
+                remote_port: getDisplayAttrValue(edgeObj, 'remote_port'),
+                edge_color: edgeObj.lineColor || '',
+                direction: hasArrow ? 'OUT' : 'NO_DIRECTION',
+                dotted: edgeObj.lineStyle === 'dashed' || edgeObj.dotted === true,
+                displayAttributes: edgeObj.displayAttributes || []
+            };
+        }
+
+        function parseNavigatorEdge(edgeObj) {
+            const leftId = normId(getDisplayAttrValue(edgeObj, 'left_id'));
+            const rightId = normId(getDisplayAttrValue(edgeObj, 'right_id'));
+            const leftIsGroup = isGroupId(edgeObj.source);
+            const rightIsGroup = isGroupId(edgeObj.target);
+            return {
+                leftId: leftId,
+                rightId: rightId,
+                leftIsGroup: leftIsGroup,
+                rightIsGroup: rightIsGroup,
+                leftGroupId: leftIsGroup ? String(edgeObj.source) : '',
+                rightGroupId: rightIsGroup ? String(edgeObj.target) : '',
+                rel: buildRelFromNavigatorEdge(edgeObj)
+            };
+        }
+
+        function parseAllNavigatorEdges() {
+            const edges = [];
+            const groupIds = new Set();
+            let leftGroupId = '';
+            let rightGroupId = '';
+            for (let i = 0; i < navigatorEdges.length; i++) {
+                const parsed = parseNavigatorEdge(navigatorEdges[i]);
+                if (!parsed.leftId || !parsed.rightId) {
+                    continue;
+                }
+                edges.push(parsed);
+                if (parsed.leftGroupId) {
+                    groupIds.add(parsed.leftGroupId);
+                    if (!leftGroupId) {
+                        leftGroupId = parsed.leftGroupId;
+                    }
+                }
+                if (parsed.rightGroupId) {
+                    groupIds.add(parsed.rightGroupId);
+                    if (!rightGroupId) {
+                        rightGroupId = parsed.rightGroupId;
+                    }
+                }
+            }
+            return {
+                edges: edges,
+                groupIds: groupIds,
+                leftGroupId: leftGroupId,
+                rightGroupId: rightGroupId
+            };
+        }
+
+        function pseudoNodeFromRel(realId, rel, side) {
+            const label =
+                side === 'left'
+                    ? rel && rel.left_label
+                    : rel && rel.right_label;
+            return {
+                node_id: realId,
+                node_label: label || realId,
+                hostname: label || realId,
+                node_type: '',
+                iconURL: 'Not Available'
+            };
+        }
+
+        function resolveNavigatorNode(realId, parsedEdge, side, nodeMap) {
+            const fromMap = nodeMap.get(realId);
+            if (fromMap) {
+                return fromMap;
+            }
+            return pseudoNodeFromRel(realId, parsedEdge.rel, side);
+        }
+
+        function initHub(graphContainer, nodes, relationships, nodeMap, focusId, allowedPeersSet) {
+            const focusNorm = normId(focusId);
+            let filtered = relationships.filter(function (r) {
+                return relTouchesNode(r, focusNorm);
+            });
+            if (allowedPeersSet && allowedPeersSet.size > 0) {
+                const allowedNorm = new Set(
+                    Array.from(allowedPeersSet).map(function (x) {
+                        return normId(x);
+                    })
+                );
+                const narrowed = filtered.filter(function (r) {
+                    const peer = peerOnRel(r, focusNorm);
+                    return peer && allowedNorm.has(peer);
+                });
+                if (narrowed.length > 0) {
+                    filtered = narrowed;
+                }
+                /* If navigator peer ids do not match graph ids, still show hub edges */
+            }
 
             if (!filtered.length) {
                 const msg = document.createElement('div');
@@ -517,9 +811,9 @@ get_topology_data(stack_name=None, node_list=None, query=None, relation_map=None
                 return;
             }
 
-            let focalNode = nodeMap.get(contextNodeId);
+            let focalNode = nodeMap.get(focusNorm) || nodeMap.get(focusId);
             if (!focalNode) {
-                focalNode = buildPseudoFocal(contextNodeId, filtered);
+                focalNode = buildPseudoFocal(focusNorm, filtered);
             }
 
             const hubLayout = document.createElement('div');
@@ -527,7 +821,7 @@ get_topology_data(stack_name=None, node_list=None, query=None, relation_map=None
 
             const focalCol = document.createElement('div');
             focalCol.className = 'hub-focal';
-            focalCol.appendChild(createNodeEl(focalNode, 'focal'));
+            focalCol.appendChild(createNodeEl(focalNode, 'focal', attributeMap));
 
             const hubConnections = document.createElement('div');
             hubConnections.className = 'hub-connections';
@@ -539,42 +833,40 @@ get_topology_data(stack_name=None, node_list=None, query=None, relation_map=None
             rowsCol.className = 'hub-rows';
 
             const byPeer = new Map();
-            for (const r of filtered) {
-                const peer = r.left_id === contextNodeId ? r.right_id : r.left_id;
+            for (let i = 0; i < filtered.length; i++) {
+                const r = filtered[i];
+                const peer = peerOnRel(r, focusNorm);
+                if (!peer) {
+                    continue;
+                }
                 if (!byPeer.has(peer)) {
                     byPeer.set(peer, []);
                 }
                 byPeer.get(peer).push(r);
             }
 
-            const sortedPeers = [...byPeer.keys()].sort((a, b) =>
-                String(a).localeCompare(String(b))
-            );
+            const sortedPeers = Array.from(byPeer.keys()).sort(function (a, b) {
+                return String(a).localeCompare(String(b));
+            });
 
-            if (sortedPeers.length === 1) {
-                hubLayout.classList.add('hub-layout--single-peer');
-            }
-
-            for (const peerId of sortedPeers) {
+            for (let i = 0; i < sortedPeers.length; i++) {
+                const peerId = sortedPeers[i];
                 const rels = byPeer.get(peerId);
                 const row = document.createElement('div');
                 row.className = 'hub-peer-row';
 
                 const edgesWrap = document.createElement('div');
                 edgesWrap.className = 'edges-container';
-
                 const edgesInner = document.createElement('div');
                 edgesInner.className = 'edges';
                 const rightLine = document.createElement('div');
                 rightLine.className = 'parallel-line';
-
-                createEdgesInto(edgesInner, rels, contextNodeId);
-
+                createEdgesInto(edgesInner, rels, focusNorm, attributeMap);
                 edgesWrap.appendChild(edgesInner);
                 edgesWrap.appendChild(rightLine);
 
                 const peerNode = nodeMap.get(peerId) || pseudoNodeForPeer(peerId, rels);
-                const peerEl = createNodeEl(peerNode, peerId);
+                const peerEl = createNodeEl(peerNode, peerId, attributeMap);
 
                 row.appendChild(edgesWrap);
                 row.appendChild(peerEl);
@@ -591,12 +883,326 @@ get_topology_data(stack_name=None, node_list=None, query=None, relation_map=None
             hubLayout.appendChild(focalCol);
             hubLayout.appendChild(scrollInner);
             graphContainer.appendChild(hubLayout);
+        }
+
+        /** Case C: no groupNode endpoints — one row per unique (left,right) pair. */
+        function renderPerEdgeRows(graphContainer, parsedEdges, nodeMap) {
+            const stack = document.createElement('div');
+            stack.className = 'edge-rows-stack';
+
+            const byPair = new Map();
+            const orderedKeys = [];
+            for (let i = 0; i < parsedEdges.length; i++) {
+                const pe = parsedEdges[i];
+                const a = pe.leftId;
+                const b = pe.rightId;
+                const key = a < b ? a + '|' + b : b + '|' + a;
+                if (!byPair.has(key)) {
+                    byPair.set(key, { leftId: a, rightId: b, edges: [] });
+                    orderedKeys.push(key);
+                }
+                byPair.get(key).edges.push(pe);
+            }
+
+            for (let i = 0; i < orderedKeys.length; i++) {
+                const group = byPair.get(orderedKeys[i]);
+                const rels = group.edges.map(function (pe) { return pe.rel; });
+                const leftNode = resolveNavigatorNode(group.leftId, group.edges[0], 'left', nodeMap);
+                const rightNode = resolveNavigatorNode(group.rightId, group.edges[0], 'right', nodeMap);
+
+                const row = document.createElement('div');
+                row.className = 'edge-details-row';
+                row.appendChild(createNodeEl(leftNode, group.leftId, attributeMap));
+                row.appendChild(buildEdgeDetailsStrip(rels, group.leftId));
+                row.appendChild(createNodeEl(rightNode, group.rightId, attributeMap));
+
+                stack.appendChild(row);
+            }
+
+            const scrollInner = document.createElement('div');
+            scrollInner.className = 'hub-graph-inner';
+            scrollInner.appendChild(stack);
+            graphContainer.appendChild(scrollInner);
+        }
+
+        /**
+         * Case A: exactly one groupNode side — single (non-group) node renders on the
+         * visual left as the focal; unique group members stack as peers on the right.
+         */
+        function renderSingleGroupHub(graphContainer, parsed, nodeMap) {
+            const groupOnLeft = parsed.leftGroupId !== '';
+
+            let singleNodeId = '';
+            const memberOrder = [];
+            const memberSeen = new Set();
+            const edgesByMember = new Map();
+            let firstParsedEdge = null;
+
+            for (let i = 0; i < parsed.edges.length; i++) {
+                const pe = parsed.edges[i];
+                const memberId = groupOnLeft ? pe.leftId : pe.rightId;
+                const singleId = groupOnLeft ? pe.rightId : pe.leftId;
+                if (!singleNodeId) {
+                    singleNodeId = singleId;
+                    firstParsedEdge = pe;
+                } else if (singleNodeId !== singleId) {
+                    console.warn(
+                        'topology_relations_view: navigator edges have inconsistent non-group endpoint; using "' +
+                            singleNodeId +
+                            '".'
+                    );
+                }
+                if (!memberSeen.has(memberId)) {
+                    memberSeen.add(memberId);
+                    memberOrder.push(memberId);
+                    edgesByMember.set(memberId, []);
+                }
+                edgesByMember.get(memberId).push(pe);
+            }
+
+            if (!singleNodeId) {
+                const msg = document.createElement('div');
+                msg.className = 'empty-message';
+                msg.textContent = 'No valid non-group endpoint in navigatorWidgetContext.';
+                graphContainer.appendChild(msg);
+                return;
+            }
+
+            const focalSide = groupOnLeft ? 'right' : 'left';
+            const memberSide = groupOnLeft ? 'left' : 'right';
+            const focalNode = resolveNavigatorNode(singleNodeId, firstParsedEdge, focalSide, nodeMap);
+
+            const hubLayout = document.createElement('div');
+            hubLayout.className = 'hub-layout';
+
+            const focalCol = document.createElement('div');
+            focalCol.className = 'hub-focal';
+            focalCol.appendChild(createNodeEl(focalNode, 'focal', attributeMap));
+
+            const hubConnections = document.createElement('div');
+            hubConnections.className = 'hub-connections';
+
+            const leftParallel = document.createElement('div');
+            leftParallel.className = 'parallel-line hub-parallel-left';
+
+            const rowsCol = document.createElement('div');
+            rowsCol.className = 'hub-rows';
+
+            for (let i = 0; i < memberOrder.length; i++) {
+                const memberId = memberOrder[i];
+                const memberEdges = edgesByMember.get(memberId);
+                const rels = memberEdges.map(function (pe) { return pe.rel; });
+
+                const row = document.createElement('div');
+                row.className = 'hub-peer-row';
+
+                const edgesWrap = document.createElement('div');
+                edgesWrap.className = 'edges-container';
+                const edgesInner = document.createElement('div');
+                edgesInner.className = 'edges';
+                const rightLine = document.createElement('div');
+                rightLine.className = 'parallel-line';
+                createEdgesInto(edgesInner, rels, singleNodeId, attributeMap);
+                edgesWrap.appendChild(edgesInner);
+                edgesWrap.appendChild(rightLine);
+
+                const memberNode = resolveNavigatorNode(memberId, memberEdges[0], memberSide, nodeMap);
+                const memberEl = createNodeEl(memberNode, memberId, attributeMap);
+
+                row.appendChild(edgesWrap);
+                row.appendChild(memberEl);
+                rowsCol.appendChild(row);
+            }
+
+            hubConnections.appendChild(leftParallel);
+            hubConnections.appendChild(rowsCol);
+
+            const scrollInner = document.createElement('div');
+            scrollInner.className = 'hub-graph-inner';
+            scrollInner.appendChild(hubConnections);
+
+            hubLayout.appendChild(focalCol);
+            hubLayout.appendChild(scrollInner);
+            graphContainer.appendChild(hubLayout);
+        }
+
+        /**
+         * Case B: both sides grouped — render one mini-hub per unique left-group
+         * member. Right-group members repeat across mini-hubs only when they have
+         * more than one left peer (no crossings, no unnecessary duplication).
+         */
+        function renderTwoGroupBipartite(graphContainer, parsed, nodeMap) {
+            const leftOrder = [];
+            const leftSeen = new Set();
+            const slotByLeft = new Map();
+
+            for (let i = 0; i < parsed.edges.length; i++) {
+                const pe = parsed.edges[i];
+                if (!leftSeen.has(pe.leftId)) {
+                    leftSeen.add(pe.leftId);
+                    leftOrder.push(pe.leftId);
+                    slotByLeft.set(pe.leftId, {
+                        sample: pe,
+                        peerOrder: [],
+                        peerSeen: new Set(),
+                        byPeer: new Map()
+                    });
+                }
+                const slot = slotByLeft.get(pe.leftId);
+                if (!slot.peerSeen.has(pe.rightId)) {
+                    slot.peerSeen.add(pe.rightId);
+                    slot.peerOrder.push(pe.rightId);
+                    slot.byPeer.set(pe.rightId, []);
+                }
+                slot.byPeer.get(pe.rightId).push(pe);
+            }
+
+            const stack = document.createElement('div');
+            stack.className = 'edge-rows-stack';
+
+            for (let i = 0; i < leftOrder.length; i++) {
+                const leftId = leftOrder[i];
+                const slot = slotByLeft.get(leftId);
+
+                const hubLayout = document.createElement('div');
+                hubLayout.className = 'hub-layout';
+
+                const focalCol = document.createElement('div');
+                focalCol.className = 'hub-focal';
+                const leftNode = resolveNavigatorNode(leftId, slot.sample, 'left', nodeMap);
+                focalCol.appendChild(createNodeEl(leftNode, 'left-' + i, attributeMap));
+
+                const hubConnections = document.createElement('div');
+                hubConnections.className = 'hub-connections';
+
+                const leftParallel = document.createElement('div');
+                leftParallel.className = 'parallel-line hub-parallel-left';
+
+                const rowsCol = document.createElement('div');
+                rowsCol.className = 'hub-rows';
+
+                for (let j = 0; j < slot.peerOrder.length; j++) {
+                    const peerId = slot.peerOrder[j];
+                    const peerEdges = slot.byPeer.get(peerId);
+                    const rels = peerEdges.map(function (pe) { return pe.rel; });
+
+                    const row = document.createElement('div');
+                    row.className = 'hub-peer-row';
+
+                    const edgesWrap = document.createElement('div');
+                    edgesWrap.className = 'edges-container';
+                    const edgesInner = document.createElement('div');
+                    edgesInner.className = 'edges';
+                    const rightLine = document.createElement('div');
+                    rightLine.className = 'parallel-line';
+                    createEdgesInto(edgesInner, rels, leftId, attributeMap);
+                    edgesWrap.appendChild(edgesInner);
+                    edgesWrap.appendChild(rightLine);
+
+                    const peerNode = resolveNavigatorNode(peerId, peerEdges[0], 'right', nodeMap);
+                    const peerEl = createNodeEl(peerNode, 'right-' + i + '-' + j, attributeMap);
+
+                    row.appendChild(edgesWrap);
+                    row.appendChild(peerEl);
+                    rowsCol.appendChild(row);
+                }
+
+                hubConnections.appendChild(leftParallel);
+                hubConnections.appendChild(rowsCol);
+                hubLayout.appendChild(focalCol);
+                hubLayout.appendChild(hubConnections);
+                stack.appendChild(hubLayout);
+            }
+
+            const scrollInner = document.createElement('div');
+            scrollInner.className = 'hub-graph-inner';
+            scrollInner.appendChild(stack);
+            graphContainer.appendChild(scrollInner);
+        }
+
+        function initEdgeRows(graphContainer, nodeMap) {
+            const parsed = parseAllNavigatorEdges();
+
+            if (!parsed.edges.length) {
+                const msg = document.createElement('div');
+                msg.className = 'empty-message';
+                msg.textContent = 'No valid edges in navigatorWidgetContext.';
+                graphContainer.appendChild(msg);
+                return;
+            }
+
+            const groupCount = parsed.groupIds.size;
+            if (groupCount === 0) {
+                renderPerEdgeRows(graphContainer, parsed.edges, nodeMap);
+            } else if (groupCount === 1) {
+                renderSingleGroupHub(graphContainer, parsed, nodeMap);
+            } else {
+                renderTwoGroupBipartite(graphContainer, parsed, nodeMap);
+            }
+        }
+
+        function initGraph() {
+            const graphContainer = document.getElementById('graph-container');
+            graphContainer.innerHTML = '';
+
+            if (configError) {
+                const msg = document.createElement('div');
+                msg.className = 'empty-message';
+                msg.textContent = configError;
+                graphContainer.appendChild(msg);
+                return;
+            }
+
+            const nodes = topologyData?.stack?.nodes || [];
+            const relationships = topologyData?.stack?.relationships || [];
+            if (topologyData?.chunk_info?.has_more_results) {
+                console.warn(
+                    'topology_relations_view: topology response is chunked (has_more_results). Some edges may be missing until the engine returns additional chunks or a larger chunk_size.'
+                );
+            }
+            const nodeMap = new Map(nodes.map(function (n) { return [n.node_id, n]; }));
+
+            if (layoutMode === 'hub') {
+                if (!focalNodeId) {
+                    const msg = document.createElement('div');
+                    msg.className = 'empty-message';
+                    msg.textContent = 'No focal node (context.node_id) for hub layout.';
+                    graphContainer.appendChild(msg);
+                    return;
+                }
+                initHub(graphContainer, nodes, relationships, nodeMap, focalNodeId, null);
+            } else if (layoutMode === 'edgeRows') {
+                if (!navigatorEdges.length) {
+                    const msg = document.createElement('div');
+                    msg.className = 'empty-message';
+                    msg.textContent = 'No edges in context.navigatorWidgetContext.';
+                    graphContainer.appendChild(msg);
+                    return;
+                }
+                initEdgeRows(graphContainer, nodeMap);
+            } else {
+                const msg = document.createElement('div');
+                msg.className = 'empty-message';
+                msg.textContent = 'Unknown layout mode.';
+                graphContainer.appendChild(msg);
+                return;
+            }
 
             console.log('topology_relations_view widget: topologyData', topologyData);
             console.log('topology_relations_view widget: allVariables', allVariables);
+            console.log('topology_relations_view widget: node_list_raw', node_list_raw);
         }
 
         initGraph();
+
+        // Run this inside the iframe
+        const parentStyles = getComputedStyle(parent.document.documentElement);
+        const themeColor = parentStyles.getPropertyValue('--v-theme-cfxcard').trim();
+        const textColor = parentStyles.getPropertyValue('--v-theme-cfxtext').trim();
+
+        // Apply it to the iframe's root
+        document.documentElement.style.setProperty('--v-theme-cfxcard', themeColor);
+        document.documentElement.style.setProperty('--v-theme-cfxtext', textColor);
     </script>
 </body>
 </html>
