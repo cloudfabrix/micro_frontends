@@ -1346,17 +1346,23 @@ get_topology_data(stack_name=None, node_list=None, query=None, relation_map=None
             }
         }
 
-        // Run this inside the iframe
-        const parentStyles = getComputedStyle(parent.document.documentElement);
-        const themeColor = parentStyles.getPropertyValue('--v-theme-cfxcard').trim();
-        const textColor = parentStyles.getPropertyValue('--v-theme-cfxtext').trim();
-        const backgroundColor = parentStyles.getPropertyValue('--v-theme-cfxbackground').trim();
+        // Sync theme CSS variables and color-scheme from the parent Vuetify application.
+        // Vuetify 3 scopes its theme class (v-theme--dark / v-theme--light) and CSS custom
+        // properties to the .v-application element, not to <html>.
+        function syncThemeFromParent() {
+            const vApp = parent.document.querySelector('.v-application');
+            if (!vApp) {
+                return;
+            }
+            const s = getComputedStyle(vApp);
+            document.documentElement.style.setProperty('--v-theme-cfxcard',       s.getPropertyValue('--v-theme-cfxcard').trim());
+            document.documentElement.style.setProperty('--v-theme-cfxtext',       s.getPropertyValue('--v-theme-cfxtext').trim());
+            document.documentElement.style.setProperty('--v-theme-cfxbackground', s.getPropertyValue('--v-theme-cfxbackground').trim());
+            document.documentElement.style.colorScheme =
+                vApp.classList.contains('v-theme--dark') ? 'dark' : 'light';
+        }
 
-        // Apply it to the iframe's root
-        document.documentElement.style.setProperty('--v-theme-cfxcard', themeColor);
-        document.documentElement.style.setProperty('--v-theme-cfxtext', textColor);
-        document.documentElement.style.setProperty('--v-theme-cfxbackground', backgroundColor);
-
+        syncThemeFromParent();
         loadAndRender();
     </script>
 </body>
