@@ -12,7 +12,7 @@ get_topology_data(stack_name=None, node_list=None, query=None, relation_map=None
 
   ── Use case 1: Relationship view  (context.node_id is set) ──────────────────
     The widget is used as a "relationship view". The user has clicked a node
-    from a node list in another widget (e.g. a tabular list), which pushes
+    from a node list in 3 column navigator (for example), which pushes
     that node's id into context.node_id.
     Layout: the selected node appears on the left as the focal node; all
     nodes it is connected to, along with their relationship edges, fan out
@@ -24,22 +24,21 @@ get_topology_data(stack_name=None, node_list=None, query=None, relation_map=None
     those objects are pushed into navigatorWidgetContext as an array.
     The sub-layout depends on what was clicked:
 
-      • Exactly 1 item with a node_id field → the user clicked a node.
-        Renders a compact node info card (icon, label, layer, type, optional
-        htmlLabel). No topology data fetch.  (layout_mode = 'nodeDetails')
+      • Items present and [0] has a node_id field → the user clicked node(s).
+        - Exactly 1 node selected → renders a compact node info card (icon,
+          label, layer, type, optional htmlLabel). No topology data fetch.
+          (layout_mode = 'nodeDetails')
+        - More than 1 node selected → shows a prompt to select a single node.
 
-      • 1 groupNode endpoint → the user clicked a grouped edge where one
-        side is a grouped node. Renders single non-group node on the left,
-        all group members as peer rows on the right.  (layout_mode = 'edgeRows')
-
-      • 2 groupNode endpoints → both sides are grouped nodes. Renders a
-        stack of mini-hubs, one per left-group member, with right-group
-        peers repeated only when needed to avoid crossings.
-        (layout_mode = 'edgeRows')
-
-      • 0 groupNode endpoints → regular edge(s) between two real nodes.
-        Renders one left–right strip per unique node pair.
-        (layout_mode = 'edgeRows')
+      • Items present and [0] has no node_id → the user clicked edge(s).
+        Sub-layout is determined by how many distinct groupNode endpoints appear:
+        - 1 groupNode endpoint → single non-group node on the left, all group
+          members as peer rows on the right.  (layout_mode = 'edgeRows')
+        - 2 groupNode endpoints → stack of mini-hubs, one per left-group
+          member, right-group peers repeated only when needed to avoid
+          crossings.  (layout_mode = 'edgeRows')
+        - 0 groupNode endpoints → one left–right strip per unique node pair.
+          (layout_mode = 'edgeRows')
 
       • navigatorWidgetContext present but empty → the user has not yet
         clicked anything. Shows an idle prompt.
@@ -132,7 +131,7 @@ get_topology_data(stack_name=None, node_list=None, query=None, relation_map=None
         {% endif %}
     {% endif %}
 
-    {# Topology data is fetched client-side from data.json.j2 in chunks. #}
+    {# Topology data is fetched client-side from query.json.j2 in chunks. #}
     {% set topology_api_params_json = {
         'stack_name':       stack_name,
         'node_list':        node_list_raw,
@@ -1388,7 +1387,7 @@ get_topology_data(stack_name=None, node_list=None, query=None, relation_map=None
 
         function fetchChunk(chunkOffset) {
             const q = Object.assign({}, topologyApiParams, { chunk_offset: chunkOffset });
-            return fetch('data.json.j2?query=' + btoa(JSON.stringify(q)))
+            return fetch('query.json?query=' + btoa(JSON.stringify(q)))
                 .then(function (r) { return r.json(); });
         }
 
