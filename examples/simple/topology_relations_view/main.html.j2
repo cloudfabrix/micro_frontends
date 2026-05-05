@@ -86,6 +86,52 @@ get_topology_data(stack_name=None, node_list=None, query=None, relation_map=None
         graph_name=graph_name,
         relation_map=relation_map
     ) %}
+
+    {# If the response includes chunk_info, keep fetching until has_more_results is false. #}
+    {% if topology_data.chunk_info is defined %}
+        {% set ns = namespace(
+            nodes=topology_data.stack.nodes | list,
+            relationships=topology_data.stack.relationships | list,
+            chunk_info=topology_data.chunk_info,
+            done=not topology_data.chunk_info.has_more_results
+        ) %}
+
+        {% for _ in range(20) %}
+            {% if not ns.done %}
+                {% set next_chunk = engine.get_topology_data(
+                    stack_name=stack_name,
+                    node_list=node_list_raw,
+                    nodes_collection=nodes_collection,
+                    edges_collection=edges_collection,
+                    graph_name=graph_name,
+                    relation_map=relation_map,
+                    chunk_offset=ns.chunk_info.next_chunk_offset
+                ) %}
+                {% for n in next_chunk.stack.nodes %}
+                    {% set _ = ns.nodes.append(n) %}
+                {% endfor %}
+                {% for r in next_chunk.stack.relationships %}
+                    {% set _ = ns.relationships.append(r) %}
+                {% endfor %}
+                {% set ns.chunk_info = next_chunk.chunk_info %}
+                {% if not ns.chunk_info.has_more_results %}
+                    {% set ns.done = true %}
+                {% endif %}
+            {% endif %}
+        {% endfor %}
+
+        {# Rebuild topology_data with the fully merged stack. #}
+        {% set topology_data = {
+            'chunk_info': ns.chunk_info,
+            'stack': {
+                'name':          topology_data.stack.name,
+                'description':   topology_data.stack.description,
+                'hierarchical':  topology_data.stack.hierarchical,
+                'nodes':         ns.nodes,
+                'relationships': ns.relationships
+            }
+        } %}
+    {% endif %}
 {% endif %}
 
 {% set topology_data_json = topology_data | tojson %}
@@ -1192,11 +1238,6 @@ get_topology_data(stack_name=None, node_list=None, query=None, relation_map=None
 
             const nodes = topologyData?.stack?.nodes || [];
             const relationships = topologyData?.stack?.relationships || [];
-            if (topologyData?.chunk_info?.has_more_results) {
-                console.warn(
-                    'topology_relations_view: topology response is chunked (has_more_results). Some edges may be missing until the engine returns additional chunks or a larger chunk_size.'
-                );
-            }
             const nodeMap = new Map(nodes.map(function (n) { return [n.node_id, n]; }));
 
             if (layoutMode === 'hub') {
