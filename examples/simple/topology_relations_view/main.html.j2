@@ -73,68 +73,23 @@ get_topology_data(stack_name=None, node_list=None, query=None, relation_map=None
 {% endif %}
 
 {% if not config_error and (node_list_raw | length) == 0 %}
-    {% set config_error = 'No nodes to display. Provide context.node_id or context.navigatorWidgetContext with left_id/right_id in displayAttributes.' %}
-{% endif %}
-
-{% set topology_data = {} %}
-{% if not config_error %}
-    {% set topology_data = engine.get_topology_data(
-        stack_name=stack_name,
-        node_list=node_list_raw,
-        nodes_collection=nodes_collection,
-        edges_collection=edges_collection,
-        graph_name=graph_name,
-        relation_map=relation_map
-    ) %}
-
-    {# If the response includes chunk_info, keep fetching until has_more_results is false. #}
-    {% if topology_data.chunk_info is defined %}
-        {% set ns = namespace(
-            nodes=topology_data.stack.nodes | list,
-            relationships=topology_data.stack.relationships | list,
-            chunk_info=topology_data.chunk_info,
-            done=not topology_data.chunk_info.has_more_results
-        ) %}
-
-        {% for _ in range(20) %}
-            {% if not ns.done %}
-                {% set next_chunk = engine.get_topology_data(
-                    stack_name=stack_name,
-                    node_list=node_list_raw,
-                    nodes_collection=nodes_collection,
-                    edges_collection=edges_collection,
-                    graph_name=graph_name,
-                    relation_map=relation_map,
-                    chunk_offset=ns.chunk_info.next_chunk_offset
-                ) %}
-                {% for n in next_chunk.stack.nodes %}
-                    {% set _ = ns.nodes.append(n) %}
-                {% endfor %}
-                {% for r in next_chunk.stack.relationships %}
-                    {% set _ = ns.relationships.append(r) %}
-                {% endfor %}
-                {% set ns.chunk_info = next_chunk.chunk_info %}
-                {% if not ns.chunk_info.has_more_results %}
-                    {% set ns.done = true %}
-                {% endif %}
-            {% endif %}
-        {% endfor %}
-
-        {# Rebuild topology_data with the fully merged stack. #}
-        {% set topology_data = {
-            'chunk_info': ns.chunk_info,
-            'stack': {
-                'name':          topology_data.stack.name,
-                'description':   topology_data.stack.description,
-                'hierarchical':  topology_data.stack.hierarchical,
-                'nodes':         ns.nodes,
-                'relationships': ns.relationships
-            }
-        } %}
+    {% if navigator_edges | length == 0 %}
+        {% set config_error = 'Click on any edge in the topology to view its details.' %}
+    {% else %}
+        {% set config_error = 'No nodes could be resolved from the selected edges.' %}
     {% endif %}
 {% endif %}
 
-{% set topology_data_json = topology_data | tojson %}
+{# Topology data is fetched client-side from data.json.j2 in chunks. #}
+{% set topology_api_params_json = {
+    'stack_name':        stack_name,
+    'node_list':         node_list_raw,
+    'nodes_collection':  nodes_collection,
+    'edges_collection':  edges_collection,
+    'graph_name':        graph_name,
+    'relation_map':      relation_map
+} | tojson %}
+
 {% set all_variables_json = all_variables | tojson %}
 {% set attribute_map_override_json = fv.attributeMap | default({}) | tojson %}
 
@@ -454,20 +409,78 @@ get_topology_data(stack_name=None, node_list=None, query=None, relation_map=None
             right: 20px;
             top: -4px;
         }
+
+        /* Initial centered loader — shown before first chunk arrives */
+        .initial-loader {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+            width: 100%;
+            padding: 40px;
+            color: #1976d2;
+            font-size: 13px;
+        }
+
+        .initial-loader-spinner {
+            width: 32px;
+            height: 32px;
+            border: 3px solid #bbdefb;
+            border-top-color: #1976d2;
+            border-radius: 50%;
+            animation: cfx-spin 0.8s linear infinite;
+        }
+
+        /* Small corner pill — shown while subsequent chunks load (graph stays visible) */
+        .chunk-loading-pill {
+            position: fixed;
+            bottom: 12px;
+            right: 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 14px;
+            background: rgb(var(--v-theme-cfxbackground));
+            border: 1px solid #1976d2;
+            border-radius: 16px;
+            font-size: 11px;
+            color: #1976d2;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+            z-index: 100;
+        }
+
+        .chunk-loading-pill-spinner {
+            width: 12px;
+            height: 12px;
+            border: 2px solid #bbdefb;
+            border-top-color: #1976d2;
+            border-radius: 50%;
+            animation: cfx-spin 0.8s linear infinite;
+            flex-shrink: 0;
+        }
+
+        @keyframes cfx-spin {
+            to { transform: rotate(360deg); }
+        }
     </style>
 </head>
 <body>
     <div class="container" id="relations-view">
         <div class="graph-container" id="graph-container"></div>
     </div>
+    <div id="chunk-loading-pill" class="chunk-loading-pill" style="display:none">
+        <div class="chunk-loading-pill-spinner"></div>
+        Loading more…
+    </div>
     <script>
         const layoutMode = {{ layout_mode | tojson }};
         const focalNodeId = {{ focal_node_id | tojson }};
         const navigatorEdges = {{ navigator_edges | tojson }};
         const configError = {{ config_error | tojson }};
-        const topologyData = {{ topology_data_json | safe }};
         const allVariables = {{ all_variables_json | safe }};
         const node_list_raw = {{ node_list_raw | tojson }};
+        const topologyApiParams = {{ topology_api_params_json | safe }};
 
         const defaultAttributeMap = {
             nodeLabel: ['node_label', 'hostname', 'node_id'],
@@ -1224,7 +1237,7 @@ get_topology_data(stack_name=None, node_list=None, query=None, relation_map=None
             }
         }
 
-        function initGraph() {
+        function initGraph(topologyData) {
             const graphContainer = document.getElementById('graph-container');
             graphContainer.innerHTML = '';
 
@@ -1271,16 +1284,80 @@ get_topology_data(stack_name=None, node_list=None, query=None, relation_map=None
             console.log('topology_relations_view widget: node_list_raw', node_list_raw);
         }
 
-        initGraph();
+        function showInitialLoader(container) {
+            container.innerHTML = '';
+            const loader = document.createElement('div');
+            loader.className = 'initial-loader';
+            loader.innerHTML =
+                '<div class="initial-loader-spinner"></div><span>Loading\u2026</span>';
+            container.appendChild(loader);
+        }
+
+        function showChunkPill() {
+            document.getElementById('chunk-loading-pill').style.display = 'flex';
+        }
+
+        function hideChunkPill() {
+            document.getElementById('chunk-loading-pill').style.display = 'none';
+        }
+
+        function fetchChunk(chunkOffset) {
+            const q = Object.assign({}, topologyApiParams, { chunk_offset: chunkOffset });
+            return fetch('data.json.j2?query=' + btoa(JSON.stringify(q)))
+                .then(function (r) { return r.json(); });
+        }
+
+        async function loadAndRender() {
+            const graphContainer = document.getElementById('graph-container');
+
+            if (configError) {
+                initGraph({});
+                return;
+            }
+
+            showInitialLoader(graphContainer);
+            let liveData = null;
+
+            try {
+                const firstChunk = await fetchChunk(0);
+                liveData = firstChunk;
+                initGraph(liveData);
+
+                while (liveData?.chunk_info?.has_more_results) {
+                    showChunkPill();
+                    const next = await fetchChunk(liveData.chunk_info.next_chunk_offset);
+                    liveData = {
+                        chunk_info: next.chunk_info,
+                        stack: {
+                            name:          liveData.stack.name,
+                            description:   liveData.stack.description,
+                            hierarchical:  liveData.stack.hierarchical,
+                            nodes:         liveData.stack.nodes.concat(next.stack.nodes || []),
+                            relationships: liveData.stack.relationships.concat(next.stack.relationships || [])
+                        }
+                    };
+                    initGraph(liveData);
+                }
+            } catch (err) {
+                console.error('topology_relations_view: fetch error', err);
+                initGraph({});
+            } finally {
+                hideChunkPill();
+            }
+        }
 
         // Run this inside the iframe
         const parentStyles = getComputedStyle(parent.document.documentElement);
         const themeColor = parentStyles.getPropertyValue('--v-theme-cfxcard').trim();
         const textColor = parentStyles.getPropertyValue('--v-theme-cfxtext').trim();
+        const backgroundColor = parentStyles.getPropertyValue('--v-theme-cfxbackground').trim();
 
         // Apply it to the iframe's root
         document.documentElement.style.setProperty('--v-theme-cfxcard', themeColor);
         document.documentElement.style.setProperty('--v-theme-cfxtext', textColor);
+        document.documentElement.style.setProperty('--v-theme-cfxbackground', backgroundColor);
+
+        loadAndRender();
     </script>
 </body>
 </html>
