@@ -5,90 +5,140 @@ get_topology_data(stack_name=None, node_list=None, query=None, relation_map=None
 #}
 
 {#
-  ── Widget usage scenarios ──────────────────────────────────────────────────
+  ── Widget use cases ─────────────────────────────────────────────────────────
 
-  Scenario 1 — Single focal node  (layout_mode = 'hub')
-    context.node_id is set (usually coming from stack navigator with node list item selected).
-    Renders that node on the left as the focal point; every peer it is
-    connected to (from the fetched topology graph) fans out as rows on the
-    right.
+  This widget is embedded in an iframe and driven by one of two context
+  sources set by the parent application.
 
-  Scenario 2 — Navigator edges  (layout_mode = 'edgeRows')
-    context.node_id is absent; context.navigatorWidgetContext carries one or
-    more edge objects (user clicked an edge or a grouped edge in the topology navigator widget).
-    Only those navigator widget edges are rendered — the topology fetch is used
-    solely to enrich node labels/icons.  Layout is determined by how many
-    distinct groupNode endpoints appear:
-      • 0 groupNodes → one left–right strip per unique node pair.
-      • 1 groupNode  → single non-group node on the left (focal); each group
-                        member as a peer row on the right.
-      • 2 groupNodes → stack of mini-hubs, one per left-group member, with
-                        right-group peers repeating only when needed to avoid
-                        edge crossings.
+  ── Use case 1: Relationship view  (context.node_id is set) ──────────────────
+    The widget is used as a "relationship view". The user has clicked a node
+    from a node list in another widget (e.g. a tabular list), which pushes
+    that node's id into context.node_id.
+    Layout: the selected node appears on the left as the focal node; all
+    nodes it is connected to, along with their relationship edges, fan out
+    as rows on the right.  (layout_mode = 'hub')
 
-  ────────────────────────────────────────────────────────────────────────────
+  ── Use case 2: Navigation context view  (navigatorWidgetContext is set) ──────
+    The widget is used as a "navigation context" panel. When the user clicks
+    on a node or edge(s) inside a topology widget (or any navigator widget),
+    those objects are pushed into navigatorWidgetContext as an array.
+    The sub-layout depends on what was clicked:
+
+      • Exactly 1 item with a node_id field → the user clicked a node.
+        Renders a compact node info card (icon, label, layer, type, optional
+        htmlLabel). No topology data fetch.  (layout_mode = 'nodeDetails')
+
+      • 1 groupNode endpoint → the user clicked a grouped edge where one
+        side is a grouped node. Renders single non-group node on the left,
+        all group members as peer rows on the right.  (layout_mode = 'edgeRows')
+
+      • 2 groupNode endpoints → both sides are grouped nodes. Renders a
+        stack of mini-hubs, one per left-group member, with right-group
+        peers repeated only when needed to avoid crossings.
+        (layout_mode = 'edgeRows')
+
+      • 0 groupNode endpoints → regular edge(s) between two real nodes.
+        Renders one left–right strip per unique node pair.
+        (layout_mode = 'edgeRows')
+
+      • navigatorWidgetContext present but empty → the user has not yet
+        clicked anything. Shows an idle prompt.
+
+  ─────────────────────────────────────────────────────────────────────────────
 #}
 
 {% set context = all_variables.context %}
 {% set fv = all_variables.fixed_variables | default({}) %}
 
-{% set stack_name = fv.stack_name | default('', true) %}
-{% if not stack_name %}
-    {% set stack_name = context.attrs_stack_name | default('', true) %}
-{% endif %}
-
-{% set config_error = none %}
-{% if not stack_name %}
-    {% set config_error = 'Stack name is required. Set fixed_variables.stack_name or context.attrs_stack_name.' %}
-{% endif %}
-
-{% set nodes_collection = fv.nodes_collection | default(none) %}
-{% set edges_collection = fv.edges_collection | default(none) %}
-{% set graph_name = fv.graph_name | default(none) %}
-{% set relation_map = fv.relation_map | default(none) %}
-
 {% set navigator_edges = context.navigatorWidgetContext | default([]) %}
+{% set nav_ctx_defined = 'navigatorWidgetContext' in context %}
 
-{% set node_list_raw = [] %}
-{% set layout_mode = 'hub' %}
+{% set layout_mode   = 'hub' %}
 {% set focal_node_id = none %}
+{% set node_list_raw = [] %}
+{% set config_error  = none %}
 
-{% if not config_error %}
-    {% if context.node_id is defined and context.node_id %}
-        {% set node_list_raw = [context.node_id] %}
-        {% set layout_mode = 'hub' %}
-        {% set focal_node_id = context.node_id %}
-    {% else %}
-        {% set ns_ids = namespace(ids=[]) %}
-        {% for edge in navigator_edges %}
-            {% for attr in edge.displayAttributes | default([]) %}
-                {% if attr.key in ['left_id', 'right_id'] and attr.value %}
-                    {% set _ = ns_ids.ids.append(attr.value) %}
-                {% endif %}
-            {% endfor %}
+{# Node details vars (populated when layout_mode == 'nodeDetails') #}
+{% set nd_node_id    = '' %}
+{% set nd_label      = '' %}
+{% set nd_type       = '' %}
+{% set nd_layer      = '' %}
+{% set nd_icon_url   = '' %}
+{% set nd_html_label = '' %}
+
+{# ── Layout detection ──────────────────────────────────────────────────── #}
+
+{% if navigator_edges | length == 1
+      and navigator_edges[0].node_id is defined
+      and navigator_edges[0].node_id %}
+    {# Use case 2 / node details: user clicked a node in the navigator widget #}
+    {% set layout_mode   = 'nodeDetails' %}
+    {% set nd_node_id    = navigator_edges[0].node_id %}
+    {% set nd_label      = navigator_edges[0].label     | default('') %}
+    {% set nd_type       = navigator_edges[0].type      | default('') %}
+    {% set nd_layer      = navigator_edges[0].layer     | default('') %}
+    {% set nd_icon_url   = navigator_edges[0].iconURL   | default('') %}
+    {% set nd_html_label = navigator_edges[0].htmlLabel | default('') %}
+
+{% elif nav_ctx_defined and (navigator_edges | length == 0) %}
+    {# Use case 2 / idle: navigatorWidgetContext is present but nothing selected yet #}
+    {% set config_error = "Please click on any node or edge to view its details." %}
+
+{% elif context.node_id is defined and context.node_id %}
+    {# Use case 1: relationship view driven by context.node_id #}
+    {% set layout_mode   = 'hub' %}
+    {% set focal_node_id = context.node_id %}
+    {% set node_list_raw = [context.node_id] %}
+
+{% else %}
+    {# Use case 2 / edge rows: user clicked edge(s) in the navigator widget #}
+    {% set ns_ids = namespace(ids=[]) %}
+    {% for edge in navigator_edges %}
+        {% for attr in edge.displayAttributes | default([]) %}
+            {% if attr.key in ['left_id', 'right_id'] and attr.value %}
+                {% set _ = ns_ids.ids.append(attr.value) %}
+            {% endif %}
         {% endfor %}
-        {% set node_list_raw = ns_ids.ids | unique | list %}
-        {% set layout_mode = 'edgeRows' %}
-    {% endif %}
+    {% endfor %}
+    {% set node_list_raw = ns_ids.ids | unique | list %}
+    {% set layout_mode   = 'edgeRows' %}
 {% endif %}
 
-{% if not config_error and (node_list_raw | length) == 0 %}
-    {% if navigator_edges | length == 0 %}
-        {% set config_error = 'Click on any edge in the topology to view its details.' %}
-    {% else %}
-        {% set config_error = 'No nodes could be resolved from the selected edges.' %}
+{# ── Topology config (not needed for nodeDetails mode) ────────────────── #}
+{% if layout_mode != 'nodeDetails' %}
+    {% set stack_name = fv.stack_name | default('', true) %}
+    {% if not stack_name %}
+        {% set stack_name = context.attrs_stack_name | default('', true) %}
     {% endif %}
-{% endif %}
+    {% if not stack_name and not config_error %}
+        {% set config_error = 'Stack name is required. Set fixed_variables.stack_name or context.attrs_stack_name.' %}
+    {% endif %}
 
-{# Topology data is fetched client-side from data.json.j2 in chunks. #}
-{% set topology_api_params_json = {
-    'stack_name':        stack_name,
-    'node_list':         node_list_raw,
-    'nodes_collection':  nodes_collection,
-    'edges_collection':  edges_collection,
-    'graph_name':        graph_name,
-    'relation_map':      relation_map
-} | tojson %}
+    {% set nodes_collection = fv.nodes_collection | default(none) %}
+    {% set edges_collection = fv.edges_collection | default(none) %}
+    {% set graph_name       = fv.graph_name       | default(none) %}
+    {% set relation_map     = fv.relation_map      | default(none) %}
+
+    {% if not config_error and (node_list_raw | length) == 0 %}
+        {% if navigator_edges | length == 0 %}
+            {% set config_error = 'Click on any edge in the topology to view its details.' %}
+        {% else %}
+            {% set config_error = 'No nodes could be resolved from the selected edges.' %}
+        {% endif %}
+    {% endif %}
+
+    {# Topology data is fetched client-side from data.json.j2 in chunks. #}
+    {% set topology_api_params_json = {
+        'stack_name':       stack_name,
+        'node_list':        node_list_raw,
+        'nodes_collection': nodes_collection,
+        'edges_collection': edges_collection,
+        'graph_name':       graph_name,
+        'relation_map':     relation_map
+    } | tojson %}
+{% else %}
+    {% set topology_api_params_json = '{}' %}
+{% endif %}
 
 {% set all_variables_json = all_variables | tojson %}
 {% set attribute_map_override_json = fv.attributeMap | default({}) | tojson %}
@@ -159,8 +209,8 @@ get_topology_data(stack_name=None, node_list=None, query=None, relation_map=None
             flex: 1;
             min-width: 0;
             max-width: 100%;
-            overflow-x: auto;
-            overscroll-behavior-x: contain;
+            /*overflow-x: auto;
+            overscroll-behavior-x: contain;*/
         }
 
         .hub-layout {
@@ -224,6 +274,7 @@ get_topology_data(stack_name=None, node_list=None, query=None, relation_map=None
             gap: 40px;
             width: 100%;
             min-width: 0;
+            overflow-x: auto;
         }
 
         .edge-details-row {
@@ -466,6 +517,26 @@ get_topology_data(stack_name=None, node_list=None, query=None, relation_map=None
     </style>
 </head>
 <body>
+{% if layout_mode == 'nodeDetails' %}
+    <div style="height:100%;width:100%;display:flex;justify-content:center;align-items:center;background-color:rgb(var(--v-theme-cfxbackground))">
+        <div style="display:flex;align-items:center;padding:0 16px;min-width:230px">
+            <div style="height:50px;width:50px;padding:6px;background-color:white;border-radius:50%;flex-shrink:0;margin-right:12px">
+                <img height="100%" width="100%" src="{{ nd_icon_url }}" alt="" />
+            </div>
+            <div style="display:flex;flex-direction:column;gap:2px">
+                <p style="font-size:12px;font-weight:700;margin:0">{{ nd_label }}</p>
+                <p style="font-weight:bold;margin:0">{{ nd_layer }}</p>
+                <p style="margin:0">{{ nd_type }}</p>
+            </div>
+        </div>
+        {% if nd_html_label %}
+            <hr style="align-self:stretch;border:none;border-left:1px solid rgba(var(--v-theme-cfxtext),0.2);margin:0 8px">
+            <div style="flex:1;min-width:0;margin-left:24px;font-size:12px">
+                {{ nd_html_label | safe }}
+            </div>
+        {% endif %}
+    </div>
+{% else %}
     <div class="container" id="relations-view">
         <div class="graph-container" id="graph-container"></div>
     </div>
@@ -473,6 +544,7 @@ get_topology_data(stack_name=None, node_list=None, query=None, relation_map=None
         <div class="chunk-loading-pill-spinner"></div>
         Loading more…
     </div>
+{% endif %}
     <script>
         const layoutMode = {{ layout_mode | tojson }};
         const focalNodeId = {{ focal_node_id | tojson }};
@@ -1308,6 +1380,8 @@ get_topology_data(stack_name=None, node_list=None, query=None, relation_map=None
         }
 
         async function loadAndRender() {
+            if (layoutMode === 'nodeDetails') { return; }
+
             const graphContainer = document.getElementById('graph-container');
 
             if (configError) {

@@ -1,0 +1,460 @@
+{
+    "name": "incident-details-topology",
+    "label": "Dynamic Incident Topology",
+    "description": "Dynamic Incident Topology",
+    "dashboard_style": "auto",
+    "dashboard_type": "template",
+    "version": "26.2.3.1",
+    "enabled": false,
+    "exportable": false,
+    "live_edit": true,
+    "dashboard_generator": {
+        "attachment": "generator_jinja"
+    },
+    "template_variables": {
+        "INCIDENT_CREATED_TIME": {
+            "contextId": "i_created_ts",
+            "default": "2026-01-19T09:39:36.265000"
+        },
+        "ROOM_ID": {
+            "default": "",
+            "contextId": "project_id"
+        },
+        "PROJECT_ID": {
+            "default": null,
+            "contextId": "projectid"
+        },
+        "INCIDENT_ID": {
+            "default": "",
+            "contextId": "incident_id"
+        },
+        "A_INCIDENT_ID": {
+            "default": "",
+            "contextId": "a_incident_id"
+        },
+        "STACK_NAME": {
+            "default": "",
+            "contextId": "attrs_stack_name"
+        },
+        "SELECTED_NODE_ID": {
+            "contextId": "selected_node_id"
+        },
+        "MY_TEMPLATE": {
+            "default": "<details><summary><b>{{row.a_alert_type}}</b></summary><div class='v-data-table v-data-table--dense theme--light'><div class='v-data-table__wrapper'><table style='width: 300px;'><tbody><tr><td>Source</td><td>{{row.a_source_systemname}}</td></tr><tr><td>Message</td><td>{{row.a_message}}</td></tr><tr><td>Assett IP</td><td>{{row.a_asset_ip_address}}</td></tr><tr><td>Alert Status</td><td>{{row.a_status}}</td></tr></tbody></table></div></div></details>",
+            "contextId": "MY_TEMPLATE"
+        },
+        "NODE_TYPE": {
+            "default": null,
+            "contextId": "nodeType"
+        },
+        "NODE_LABEL": {
+            "contextId": "nodeLabel"
+        },
+        "htmlLabel": {
+            "contextId": "htmlLabel"
+        },
+        "iconURL": {
+            "contextId": "iconURL"
+        },
+        "NODE_LAYER": {
+            "contextId": "nodeLayer"
+        }
+    },
+    "computedContext": {
+        "selected_node_id": {
+            "expr": "navigatorWidgetContext and navigatorWidgetContext[0].node_id"
+        },
+        "nodeType": {
+            "expr": "navigatorWidgetContext and navigatorWidgetContext[0].type"
+        },
+        "nodeLabel": {
+            "expr": "navigatorWidgetContext and navigatorWidgetContext[0].label"
+        },
+        "htmlLabel": {
+            "expr": "navigatorWidgetContext and navigatorWidgetContext[0].htmlLabel"
+        },
+        "iconURL": {
+            "expr": "navigatorWidgetContext and navigatorWidgetContext[0].iconURL"
+        },
+        "nodeLayer": {
+            "expr": "navigatorWidgetContext and navigatorWidgetContext[0].layer"
+        }
+    },
+    "dashboard_filters": {
+        "time_filter": true,
+        "default_time_range": {
+            "from_time": "{{INCIDENT_CREATED_TIME}}",
+            "from_time_delta_hours": -0.5,
+            "to_time": "{{INCIDENT_CREATED_TIME}}",
+            "to_time_delta_hours": 0.5,
+            "label": "Time Range"
+        },
+        "columns_filter": []
+    },
+    "import": [
+        {
+            "from": "oia-alerts-os",
+            "as": "alerts"
+        },
+        {
+            "from": "oia-incidents-os-template",
+            "as": "incidents"
+        }
+    ],
+    "dashboard_sections": [
+        {
+            "title": "Topology",
+            "show_filter": true,
+            "widgets": [
+                {
+                    "widget_type": "topology",
+                    "title": "Topology",
+                    "register_search_endpoints": true,
+                    "show_alert_details": false,
+                    "chartProperties": {
+                        "hasToolbar": true,
+                        "shortToolbar": true,
+                        "userZoomingEnabled": false,
+                        "customLabelTooltip": "Related Alerts"
+                    },
+                    "nodeSelectionPreview1": {
+                        "trigger": "CLICK",
+                        "position": "CONTROL_PANEL",
+                        "contentType": "DASHBOARD",
+                        "contentInfo": {
+                            "dashboardId": "user-dashboard-oia-topology-node-details-incidents"
+                        }
+                    },
+                    "edgeSelectionPreview1": {
+                        "trigger": "CLICK",
+                        "position": "CONTROL_PANEL",
+                        "contentType": "DASHBOARD",
+                        "contentInfo": {
+                            "dashboardId": "user-dashboard-oia-topology-edge-details"
+                        }
+                    },
+                    "uiOptions": {
+                        "isNavigationWidget": true,
+                        "navigationContextKeys0": [
+                            "node_id",
+                            "type",
+                            "label",
+                            "htmlLabel",
+                            "iconURL",
+                            "layer"
+                        ],
+                        "navigationExcludeWidgets": []
+                    },
+                    "nodes_report": {
+                        "reportMetaData": {
+                            "sorting": true,
+                            "filtering": true,
+                            "title": "Nodes",
+                            "remote_searchable": false,
+                            "remote_searchable_cols": [
+                                "name",
+                                "node_label",
+                                "node_id",
+                                "node_type"
+                            ],
+                            "actions": [],
+                            "reportColumnDefinitionList": [
+                                {
+                                    "identifier": "node_label",
+                                    "title": "Name",
+                                    "key": false
+                                },
+                                {
+                                    "identifier": "layer",
+                                    "key": false,
+                                    "title": "Layer"
+                                },
+                                {
+                                    "identifier": "node_type",
+                                    "key": false,
+                                    "title": "node_type"
+                                },
+                                {
+                                    "identifier": "name",
+                                    "hidden": true,
+                                    "key": false
+                                },
+                                {
+                                    "identifier": "vcenter_name",
+                                    "title": "vCenter Name",
+                                    "key": false
+                                },
+                                {
+                                    "identifier": "datacenter",
+                                    "key": false,
+                                    "title": "Data Center"
+                                },
+                                {
+                                    "identifier": "esxi_cluster",
+                                    "key": false,
+                                    "title": "ESXI Cluster"
+                                },
+                                {
+                                    "identifier": "vcenter_address",
+                                    "key": false,
+                                    "title": "vCenter Address"
+                                },
+                                {
+                                    "identifier": "vcenter_object",
+                                    "key": false,
+                                    "title": "vCenter Object"
+                                },
+                                {
+                                    "identifier": "vcenter_os_type",
+                                    "key": false,
+                                    "title": "vCenter OS type"
+                                },
+                                {
+                                    "identifier": "phy_switch_name",
+                                    "key": false,
+                                    "title": "Physical Switch Name"
+                                },
+                                {
+                                    "identifier": "node_id",
+                                    "key": true,
+                                    "hidden": true
+                                }
+                            ]
+                        }
+                    },
+                    "edges_report": {
+                        "reportId": "rda.saas.topology.edges.report",
+                        "reportMetaData": {
+                            "sorting": true,
+                            "filtering": true,
+                            "title": "Edges",
+                            "reportColumnDefinitionList": [
+                                {
+                                    "hidden": false,
+                                    "id": "left_id",
+                                    "identifier": "left_id",
+                                    "key": true,
+                                    "title": "Left Id",
+                                    "type": "TEXT",
+                                    "visible": false
+                                },
+                                {
+                                    "hidden": false,
+                                    "id": "left_label",
+                                    "identifier": "left_label",
+                                    "key": false,
+                                    "title": "Source",
+                                    "type": "TEXT",
+                                    "visible": true
+                                },
+                                {
+                                    "hidden": false,
+                                    "id": "right_id",
+                                    "identifier": "right_id",
+                                    "key": true,
+                                    "title": "Right Id",
+                                    "type": "TEXT",
+                                    "visible": false
+                                },
+                                {
+                                    "hidden": false,
+                                    "id": "right_label",
+                                    "identifier": "right_label",
+                                    "key": false,
+                                    "title": "Destination",
+                                    "type": "TEXT",
+                                    "visible": true
+                                },
+                                {
+                                    "hidden": false,
+                                    "id": "relation_type",
+                                    "identifier": "relation_type",
+                                    "key": false,
+                                    "title": "Relation",
+                                    "type": "TEXT",
+                                    "visible": true
+                                }
+                            ],
+                            "actions": []
+                        }
+                    },
+                    "stack_type": "OIA",
+                    "auto_group": true,
+                    "oia_details": {
+                        "oia_stream": "oia-incidents-stream",
+                        "query": "timestamp later than -12 months",
+                        "oia_id_attribute": "incident_id",
+                        "stack_type": "OIA",
+                        "include_alert_nodes": true,
+                        "alert_source": {
+                            "stream": "oia-alerts-stream",
+                            "group_by": [
+                                "a_severity",
+                                "a_status"
+                            ],
+                            "incident_id_attr": "a_incident_id",
+                            "context_incident_id_attr": "incidentid",
+                            "extra_filter": "a_source_systemname is not 'Alert Group' and project_id is '{{PROJECT_ID}}'",
+                            "ts_column": "a_created_ts",
+                            "duration_hours": 9000,
+                            "agg": "value_count",
+                            "column": "count_",
+                            "type": "int"
+                        }
+                    },
+                    "max_width": 12,
+                    "min_width": 7,
+                    "height": 12,
+                    "widget_id": "0ff73e14"
+                },
+                {
+                    "widget_type": "label",
+                    "label": "attachment://node_details_label",
+                    "max_width": 12,
+                    "min_width": 3,
+                    "widget_id": "83110cc3"
+                },
+                {
+                    "widget_type": "custom_widget",
+                    "widget_implementation": "incident-details-topology/edge_detail_widget",
+                    "stack_name": "cfx_rdaf_topology",
+                    "fixed_variables": {
+                        "attributeMap": {
+                            "edgeSourceLabel": "left_label",
+                            "edgeDestLabel": "right_label",
+                            "nodeIcon": [
+                                "node_type",
+                                "iconURL"
+                            ]
+                        }
+                    },
+                    "max_width": 12,
+                    "height": 6,
+                    "min_width": 12,
+                    "widget_id": "ed6aec4b"
+                },
+                {
+                    "title": "Correlated Alerts",
+                    "widget_type": "tabular",
+                    "max_width": 12,
+                    "height": 6,
+                    "min_width": 5,
+                    "sorting": [
+                        {
+                            "a_raised_ts": "desc"
+                        }
+                    ],
+                    "stream": "oia-alerts-stream",
+                    "ts_column": "a_created_ts",
+                    "paginated": true,
+                    "resizableColumns": false,
+                    "remote_searchable": false,
+                    "extra_filter": "((a_incident_id is '{{INCIDENT_ID}}') or (a_incident_id is '{{A_INCIDENT_ID}}')) and a_source_systemname is not 'Alert Group' and a_correlation_status not-in 'AGGREGATE'",
+                    "query": "*",
+                    "duration_hours": 2160,
+                    "columns": {
+                        "a_alert_type": {
+                            "title": "Alert Type",
+                            "type": "GROUPED",
+                            "group": {
+                                "a_source_systemname": "Source",
+                                "a_message": "Message",
+                                "a_asset_ip_address": "Asset IP Address",
+                                "a_status": "Status",
+                                "a_asset_name": "Asset Name"
+                            },
+                            "color-column": "state_color"
+                        },
+                        "state_color": {
+                            "type": "COLOR-MAP",
+                            "source-column": "a_status",
+                            "color-map": {
+                                "ACTIVE": "#dd0000",
+                                "CLEAR": "#00dd00",
+                                "CLEARED": "#00dd00"
+                            }
+                        },
+                        "a_raised_ts": {
+                            "title": "Raised At",
+                            "type": "DATETIME"
+                        },
+                        "a_severity": "Severity"
+                    },
+                    "severity_columns": [
+                        "a_severity"
+                    ],
+                    "widget_id": "94a3fc14"
+                },
+                {
+                    "title": "Related Alerts",
+                    "widget_type": "tabular",
+                    "max_width": 12,
+                    "height": 6,
+                    "min_width": 5,
+                    "sorting": [
+                        {
+                            "a_raised_ts": "desc"
+                        }
+                    ],
+                    "stream": "oia-alerts-stream",
+                    "ts_column": "a_created_ts",
+                    "paginated": true,
+                    "resizableColumns": false,
+                    "remote_searchable": false,
+                    "extra_filter": "((a_incident_id is not '{{INCIDENT_ID}}') or (a_incident_id is not '{{A_INCIDENT_ID}}')) and a_source_systemname is not 'Alert Group' and a_correlation_status not-in 'AGGREGATE' and a_en_node_id is not '{{SELECTED_NODE_ID}}' and project_id is '{{PROJECT_ID}}'",
+                    "query": "*",
+                    "duration_hours": 2160,
+                    "columns": {
+                        "a_alert_type": {
+                            "title": "Alert Type",
+                            "type": "GROUPED",
+                            "group": {
+                                "a_source_systemname": "Source",
+                                "a_message": "Message",
+                                "a_asset_ip_address": "Asset IP Address",
+                                "a_status": "Status",
+                                "a_asset_name": "Asset Name"
+                            },
+                            "color-column": "state_color"
+                        },
+                        "state_color": {
+                            "type": "COLOR-MAP",
+                            "source-column": "a_status",
+                            "color-map": {
+                                "ACTIVE": "#dd0000",
+                                "CLEAR": "#00dd00",
+                                "CLEARED": "#00dd00"
+                            }
+                        },
+                        "a_raised_ts": {
+                            "title": "Raised At",
+                            "type": "DATETIME"
+                        },
+                        "a_severity": "Severity"
+                    },
+                    "severity_columns": [
+                        "a_severity"
+                    ],
+                    "widget_id": "94a3fc15"
+                }
+            ]
+        }
+    ],
+    "custom_widgets": {
+        "edge_detail_widget": {
+            "artifacts": {
+                "main": {
+                    "attachment": "edge_details",
+                    "content_type": "text/html",
+                    "is_template": true
+                },
+                "data.json.j2": {
+                    "attachment": "data.json.j2",
+                    "content_type": "application/json",
+                    "is_template": true
+                }
+            }
+        }
+    },
+    "saved_time": "2026-05-05T09:03:07.682207"
+}
