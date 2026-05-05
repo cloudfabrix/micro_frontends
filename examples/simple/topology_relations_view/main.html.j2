@@ -4,6 +4,31 @@ get_topology_data usage (given by Purvi):
 get_topology_data(stack_name=None, node_list=None, query=None, relation_map=None, graph_name=None, db_name=None, nodes_collection=None, edges_collection=None).
 #}
 
+{#
+  ── Widget usage scenarios ──────────────────────────────────────────────────
+
+  Scenario 1 — Single focal node  (layout_mode = 'hub')
+    context.node_id is set (usually coming from stack navigator with node list item selected).
+    Renders that node on the left as the focal point; every peer it is
+    connected to (from the fetched topology graph) fans out as rows on the
+    right.
+
+  Scenario 2 — Navigator edges  (layout_mode = 'edgeRows')
+    context.node_id is absent; context.navigatorWidgetContext carries one or
+    more edge objects (user clicked an edge or a grouped edge in the topology navigator widget).
+    Only those navigator widget edges are rendered — the topology fetch is used
+    solely to enrich node labels/icons.  Layout is determined by how many
+    distinct groupNode endpoints appear:
+      • 0 groupNodes → one left–right strip per unique node pair.
+      • 1 groupNode  → single non-group node on the left (focal); each group
+                        member as a peer row on the right.
+      • 2 groupNodes → stack of mini-hubs, one per left-group member, with
+                        right-group peers repeating only when needed to avoid
+                        edge crossings.
+
+  ────────────────────────────────────────────────────────────────────────────
+#}
+
 {% set context = all_variables.context %}
 {% set fv = all_variables.fixed_variables | default({}) %}
 
@@ -399,7 +424,7 @@ get_topology_data(stack_name=None, node_list=None, query=None, relation_map=None
         const node_list_raw = {{ node_list_raw | tojson }};
 
         const defaultAttributeMap = {
-            nodeLabel: 'node_label',
+            nodeLabel: ['node_label', 'hostname', 'node_id'],
             nodeIcon: 'node_type',
             edgeCenterLabel: 'link_type',
             edgeSourceLabel: 'local_port',
@@ -441,40 +466,56 @@ get_topology_data(stack_name=None, node_list=None, query=None, relation_map=None
         }
 
         function getAttributeMapValue(relationship, attributeMapKey) {
-            const key = attributeMap[attributeMapKey];
-            if (!key) {
+            const keyOrKeys = attributeMap[attributeMapKey];
+            if (!keyOrKeys) {
                 return '';
             }
-            let value = _.get(relationship, key);
-            if (value !== undefined && value !== null && value !== '') {
-                return String(value);
-            }
+            const keys = Array.isArray(keyOrKeys) ? keyOrKeys : [keyOrKeys];
             const displayAttrs = relationship.displayAttributes;
-            if (displayAttrs && Array.isArray(displayAttrs)) {
-                const displayAttr = displayAttrs.find(function (attr) {
-                    return attr.key === key;
-                });
-                if (
-                    displayAttr &&
-                    displayAttr.value !== undefined &&
-                    displayAttr.value !== null &&
-                    displayAttr.value !== ''
-                ) {
-                    return String(displayAttr.value);
+            for (let ki = 0; ki < keys.length; ki++) {
+                const key = keys[ki];
+                const value = _.get(relationship, key);
+                if (value !== undefined && value !== null && value !== '') {
+                    return String(value);
+                }
+                if (displayAttrs && Array.isArray(displayAttrs)) {
+                    const displayAttr = displayAttrs.find(function (attr) {
+                        return attr.key === key;
+                    });
+                    if (
+                        displayAttr &&
+                        displayAttr.value !== undefined &&
+                        displayAttr.value !== null &&
+                        displayAttr.value !== ''
+                    ) {
+                        return String(displayAttr.value);
+                    }
                 }
             }
             return '';
         }
 
         function resolveIconSrc(node, map, amap) {
-            let nodeIcon = _.get(node, amap.nodeIcon, '');
-            // if nodeIcon is empty or "Not Available", check both node_type and iconURL
-            if(nodeIcon === "Not Available" || nodeIcon === "") {
-                nodeIcon = _.get(node, 'node_type', '');
-                if(nodeIcon === "Not Available" || nodeIcon === "") {
-                    nodeIcon = _.get(node, 'iconURL', '');
+            const nodeIconKeys = Array.isArray(amap.nodeIcon) ? amap.nodeIcon : [amap.nodeIcon];
+            let nodeIcon = '';
+            for (let i = 0; i < nodeIconKeys.length; i++) {
+                const candidate = _.get(node, nodeIconKeys[i], '');
+                if (candidate && candidate !== 'Not Available') {
+                    nodeIcon = candidate;
+                    break;
                 }
             }
+            if (!nodeIcon) {
+                const defaultCandidate = _.get(node, defaultAttributeMap.nodeIcon, '');
+                if (defaultCandidate && defaultCandidate !== 'Not Available') {
+                    nodeIcon = defaultCandidate;
+                }
+            }
+            //console.log('resolveIconSrc: node', node);
+            //console.log('resolveIconSrc: nodeIconKeys', nodeIconKeys);
+            //console.log('resolveIconSrc: nodeIcon', nodeIcon);
+            //console.log('resolveIconSrc: map', map);
+            //console.log('resolveIconSrc: amap', amap);
             if (nodeIcon && (nodeIcon.startsWith('http://') || nodeIcon.startsWith('https://'))) {
                 return nodeIcon;
             }
@@ -489,11 +530,7 @@ get_topology_data(stack_name=None, node_list=None, query=None, relation_map=None
             div.className = 'node';
             const safeId = String(idSuffix).replace(/[^a-zA-Z0-9_-]/g, '_');
             div.id = 'node-' + safeId;
-            const label =
-                _.get(node, amap.nodeLabel, '') ||
-                node.hostname ||
-                node.node_id ||
-                '';
+            const label = getAttributeMapValue(node, 'nodeLabel');
             const iconSrc = resolveIconSrc(node, iconMap, amap);
             div.innerHTML =
                 '<div class="node-circle"><img src="" alt="" /></div><div class="node-label"></div>';
