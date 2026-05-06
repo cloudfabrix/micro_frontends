@@ -582,26 +582,25 @@ get_topology_data(stack_name=None, node_list=None, query=None, relation_map=None
 
         const iconMap = window.parent?.cfxIconMap || {};
 
-        /** Align navigator displayAttributes values with graph left_id/right_id */
-        function normId(id) {
+        function trimId(id) {
             if (id == null || id === '') {
                 return '';
             }
             return String(id).trim();
         }
 
-        function relTouchesNode(r, nodeId) {
-            const n = normId(nodeId);
-            return normId(r.left_id) === n || normId(r.right_id) === n;
+        function relationshipTouchesNode(r, nodeId) {
+            const n = trimId(nodeId);
+            return trimId(r.left_id) === n || trimId(r.right_id) === n;
         }
 
-        function peerOnRel(r, focusId) {
-            const f = normId(focusId);
-            if (normId(r.left_id) === f) {
-                return normId(r.right_id);
+        function getPeerNodeId(r, focusId) {
+            const f = trimId(focusId);
+            if (trimId(r.left_id) === f) {
+                return trimId(r.right_id);
             }
-            if (normId(r.right_id) === f) {
-                return normId(r.left_id);
+            if (trimId(r.right_id) === f) {
+                return trimId(r.left_id);
             }
             return '';
         }
@@ -683,13 +682,12 @@ get_topology_data(stack_name=None, node_list=None, query=None, relation_map=None
         }
 
         function buildPseudoFocal(focusId, rels) {
-            const f = normId(focusId);
             const r = rels.find(function (x) {
-                return normId(x.left_id) === f;
+                return trimId(x.left_id) === focusId;
             });
             if (r) {
                 return {
-                    node_id: f,
+                    node_id: focusId,
                     node_label: r.left_label,
                     hostname: r.left_label,
                     node_type: r.left_node_type,
@@ -697,19 +695,19 @@ get_topology_data(stack_name=None, node_list=None, query=None, relation_map=None
                 };
             }
             const r2 = rels.find(function (x) {
-                return normId(x.right_id) === f;
+                return trimId(x.right_id) === focusId;
             });
             if (!r2) {
                 return {
-                    node_id: f,
-                    node_label: f,
-                    hostname: f,
+                    node_id: focusId,
+                    node_label: focusId,
+                    hostname: focusId,
                     node_type: '',
                     iconURL: 'Not Available'
                 };
             }
             return {
-                node_id: f,
+                node_id: focusId,
                 node_label: r2.right_label,
                 hostname: r2.right_label,
                 node_type: r2.right_node_type,
@@ -718,9 +716,9 @@ get_topology_data(stack_name=None, node_list=None, query=None, relation_map=None
         }
 
         function pseudoNodeForPeer(peerId, rels) {
-            const p = normId(peerId);
+            const p = trimId(peerId);
             const r = rels[0];
-            if (normId(r.left_id) === p) {
+            if (trimId(r.left_id) === p) {
                 return {
                     node_id: p,
                     node_label: r.left_label,
@@ -738,7 +736,7 @@ get_topology_data(stack_name=None, node_list=None, query=None, relation_map=None
             };
         }
 
-        function createEdgesInto(edgesContainer, relationships, focusId, amap) {
+        function renderEdges(edgesContainer, relationships, focusId, amap) {
             relationships.forEach(function (relationship) {
                 const edgeDiv = document.createElement('div');
                 edgeDiv.className = 'edge';
@@ -761,10 +759,9 @@ get_topology_data(stack_name=None, node_list=None, query=None, relation_map=None
                     edgeLine.style.backgroundColor = edgeColor;
                 }
 
-                const focusNorm = normId(focusId);
                 const isRightToLeft =
-                    normId(relationship.left_id) !== focusNorm &&
-                    normId(relationship.right_id) === focusNorm;
+                    trimId(relationship.left_id) !== focusId &&
+                    trimId(relationship.right_id) === focusId;
                 const isDirectionless = relationship.direction === 'NO_DIRECTION';
 
                 const arrow = document.createElement('div');
@@ -785,7 +782,7 @@ get_topology_data(stack_name=None, node_list=None, query=None, relation_map=None
 
                 let sourceInterfaceValue;
                 let destInterfaceValue;
-                if (focusNorm === normId(relationship.left_id)) {
+                if (focusId === trimId(relationship.left_id)) {
                     sourceInterfaceValue = getAttributeMapValue(relationship, 'edgeSourceLabel');
                     destInterfaceValue = getAttributeMapValue(relationship, 'edgeDestLabel');
                 } else {
@@ -843,7 +840,7 @@ get_topology_data(stack_name=None, node_list=None, query=None, relation_map=None
             const rightLine = document.createElement('div');
             rightLine.className = 'parallel-line';
             if (rels.length) {
-                createEdgesInto(edgesInner, rels, visualLeftId, attributeMap);
+                renderEdges(edgesInner, rels, visualLeftId, attributeMap);
             }
             edgesWrap.appendChild(leftLine);
             edgesWrap.appendChild(edgesInner);
@@ -867,34 +864,33 @@ get_topology_data(stack_name=None, node_list=None, query=None, relation_map=None
         }
 
         /**
-         * Flatten a navigator edge into a relationship-shaped object so the existing
-         * createEdgesInto / getAttributeMapValue helpers (which read top-level fields with
-         * displayAttributes fallback) work unchanged.
+         * Adapt a navigator edge into a relationship-shaped object so the existing
+         * renderEdges / getAttributeMapValue helpers work unchanged.
+         * Spreads all edge properties (preserving displayAttributes for arbitrary key
+         * lookups), then adds computed fields and hoists the fields that are accessed
+         * directly by downstream code rather than via getAttributeMapValue.
          */
         function buildRelFromNavigatorEdge(edgeObj) {
-            const targetArrow = edgeObj.targetArrowShape;
-            const sourceArrow = edgeObj.sourceArrowShape;
             const hasArrow =
-                (targetArrow && targetArrow !== 'none') || (sourceArrow && sourceArrow !== 'none');
-            return {
-                left_id: getDisplayAttrValue(edgeObj, 'left_id'),
-                right_id: getDisplayAttrValue(edgeObj, 'right_id'),
-                left_label: getDisplayAttrValue(edgeObj, 'left_label'),
-                right_label: getDisplayAttrValue(edgeObj, 'right_label'),
-                relation_type: getDisplayAttrValue(edgeObj, 'relation_type'),
-                link_type: getDisplayAttrValue(edgeObj, 'link_type'),
-                local_port: getDisplayAttrValue(edgeObj, 'local_port'),
-                remote_port: getDisplayAttrValue(edgeObj, 'remote_port'),
-                edge_color: edgeObj.lineColor || '',
-                direction: hasArrow ? 'OUT' : 'NO_DIRECTION',
-                dotted: edgeObj.lineStyle === 'dashed' || edgeObj.dotted === true,
-                displayAttributes: edgeObj.displayAttributes || []
-            };
+                (edgeObj.targetArrowShape && edgeObj.targetArrowShape !== 'none') ||
+                (edgeObj.sourceArrowShape && edgeObj.sourceArrowShape !== 'none');
+            return Object.assign({}, edgeObj, {
+                direction:       hasArrow ? 'OUT' : 'NO_DIRECTION',
+                dotted:          edgeObj.lineStyle === 'dashed' || edgeObj.dotted === true,
+                edge_color:      edgeObj.lineColor || '',
+                left_id:         getDisplayAttrValue(edgeObj, 'left_id'),
+                right_id:        getDisplayAttrValue(edgeObj, 'right_id'),
+                left_label:      getDisplayAttrValue(edgeObj, 'left_label'),
+                right_label:     getDisplayAttrValue(edgeObj, 'right_label'),
+                left_node_type:  getDisplayAttrValue(edgeObj, 'left_node_type'),
+                right_node_type: getDisplayAttrValue(edgeObj, 'right_node_type'),
+                relation_type:   getDisplayAttrValue(edgeObj, 'relation_type'),
+            });
         }
 
         function parseNavigatorEdge(edgeObj) {
-            const leftId = normId(getDisplayAttrValue(edgeObj, 'left_id'));
-            const rightId = normId(getDisplayAttrValue(edgeObj, 'right_id'));
+            const leftId = trimId(getDisplayAttrValue(edgeObj, 'left_id'));
+            const rightId = trimId(getDisplayAttrValue(edgeObj, 'right_id'));
             const leftIsGroup = isGroupId(edgeObj.source);
             const rightIsGroup = isGroupId(edgeObj.target);
             return {
@@ -962,26 +958,10 @@ get_topology_data(stack_name=None, node_list=None, query=None, relation_map=None
             return pseudoNodeFromRel(realId, parsedEdge.rel, side);
         }
 
-        function initHub(graphContainer, nodes, relationships, nodeMap, focusId, allowedPeersSet) {
-            const focusNorm = normId(focusId);
+        function initHub(graphContainer, nodes, relationships, nodeMap, focusId) {
             let filtered = relationships.filter(function (r) {
-                return relTouchesNode(r, focusNorm);
+                return relationshipTouchesNode(r, focusId);
             });
-            if (allowedPeersSet && allowedPeersSet.size > 0) {
-                const allowedNorm = new Set(
-                    Array.from(allowedPeersSet).map(function (x) {
-                        return normId(x);
-                    })
-                );
-                const narrowed = filtered.filter(function (r) {
-                    const peer = peerOnRel(r, focusNorm);
-                    return peer && allowedNorm.has(peer);
-                });
-                if (narrowed.length > 0) {
-                    filtered = narrowed;
-                }
-                /* If navigator peer ids do not match graph ids, still show hub edges */
-            }
 
             if (!filtered.length) {
                 const msg = document.createElement('div');
@@ -991,9 +971,10 @@ get_topology_data(stack_name=None, node_list=None, query=None, relation_map=None
                 return;
             }
 
-            let focalNode = nodeMap.get(focusNorm) || nodeMap.get(focusId);
+            let focalNode = nodeMap.get(focusId);
+            // This can happen if the focus node is not in the node map, which can happen if the node is not in the topology data yet (maybe in next chunk?).
             if (!focalNode) {
-                focalNode = buildPseudoFocal(focusNorm, filtered);
+                focalNode = buildPseudoFocal(focusId, filtered);
             }
 
             const hubLayout = document.createElement('div');
@@ -1012,26 +993,26 @@ get_topology_data(stack_name=None, node_list=None, query=None, relation_map=None
             const rowsCol = document.createElement('div');
             rowsCol.className = 'hub-rows';
 
-            const byPeer = new Map();
+            const relsByPeerId = new Map();
             for (let i = 0; i < filtered.length; i++) {
                 const r = filtered[i];
-                const peer = peerOnRel(r, focusNorm);
+                const peer = getPeerNodeId(r, focusId);
                 if (!peer) {
                     continue;
                 }
-                if (!byPeer.has(peer)) {
-                    byPeer.set(peer, []);
+                if (!relsByPeerId.has(peer)) {
+                    relsByPeerId.set(peer, []);
                 }
-                byPeer.get(peer).push(r);
+                relsByPeerId.get(peer).push(r);
             }
 
-            const sortedPeers = Array.from(byPeer.keys()).sort(function (a, b) {
+            const sortedPeers = Array.from(relsByPeerId.keys()).sort(function (a, b) {
                 return String(a).localeCompare(String(b));
             });
 
             for (let i = 0; i < sortedPeers.length; i++) {
                 const peerId = sortedPeers[i];
-                const rels = byPeer.get(peerId);
+                const rels = relsByPeerId.get(peerId);
                 const row = document.createElement('div');
                 row.className = 'hub-peer-row';
 
@@ -1041,7 +1022,7 @@ get_topology_data(stack_name=None, node_list=None, query=None, relation_map=None
                 edgesInner.className = 'edges';
                 const rightLine = document.createElement('div');
                 rightLine.className = 'parallel-line';
-                createEdgesInto(edgesInner, rels, focusNorm, attributeMap);
+                renderEdges(edgesInner, rels, focusId, attributeMap);
                 edgesWrap.appendChild(edgesInner);
                 edgesWrap.appendChild(rightLine);
 
@@ -1070,22 +1051,22 @@ get_topology_data(stack_name=None, node_list=None, query=None, relation_map=None
             const stack = document.createElement('div');
             stack.className = 'edge-rows-stack';
 
-            const byPair = new Map();
-            const orderedKeys = [];
+            const edgesByNodePair = new Map();
+            const orderedPairKeys = [];
             for (let i = 0; i < parsedEdges.length; i++) {
                 const pe = parsedEdges[i];
                 const a = pe.leftId;
                 const b = pe.rightId;
                 const key = a < b ? a + '|' + b : b + '|' + a;
-                if (!byPair.has(key)) {
-                    byPair.set(key, { leftId: a, rightId: b, edges: [] });
-                    orderedKeys.push(key);
+                if (!edgesByNodePair.has(key)) {
+                    edgesByNodePair.set(key, { leftId: a, rightId: b, edges: [] });
+                    orderedPairKeys.push(key);
                 }
-                byPair.get(key).edges.push(pe);
+                edgesByNodePair.get(key).edges.push(pe);
             }
 
-            for (let i = 0; i < orderedKeys.length; i++) {
-                const group = byPair.get(orderedKeys[i]);
+            for (let i = 0; i < orderedPairKeys.length; i++) {
+                const group = edgesByNodePair.get(orderedPairKeys[i]);
                 const rels = group.edges.map(function (pe) { return pe.rel; });
                 const leftNode = resolveNavigatorNode(group.leftId, group.edges[0], 'left', nodeMap);
                 const rightNode = resolveNavigatorNode(group.rightId, group.edges[0], 'right', nodeMap);
@@ -1182,7 +1163,7 @@ get_topology_data(stack_name=None, node_list=None, query=None, relation_map=None
                 edgesInner.className = 'edges';
                 const rightLine = document.createElement('div');
                 rightLine.className = 'parallel-line';
-                createEdgesInto(edgesInner, rels, singleNodeId, attributeMap);
+                renderEdges(edgesInner, rels, singleNodeId, attributeMap);
                 edgesWrap.appendChild(edgesInner);
                 edgesWrap.appendChild(rightLine);
 
@@ -1214,27 +1195,27 @@ get_topology_data(stack_name=None, node_list=None, query=None, relation_map=None
         function renderTwoGroupBipartite(graphContainer, parsed, nodeMap) {
             const leftOrder = [];
             const leftSeen = new Set();
-            const slotByLeft = new Map();
+            const slotByLeftId = new Map();
 
             for (let i = 0; i < parsed.edges.length; i++) {
                 const pe = parsed.edges[i];
                 if (!leftSeen.has(pe.leftId)) {
                     leftSeen.add(pe.leftId);
                     leftOrder.push(pe.leftId);
-                    slotByLeft.set(pe.leftId, {
+                    slotByLeftId.set(pe.leftId, {
                         sample: pe,
                         peerOrder: [],
                         peerSeen: new Set(),
-                        byPeer: new Map()
+                        relsByPeerId: new Map()
                     });
                 }
-                const slot = slotByLeft.get(pe.leftId);
+                const slot = slotByLeftId.get(pe.leftId);
                 if (!slot.peerSeen.has(pe.rightId)) {
                     slot.peerSeen.add(pe.rightId);
                     slot.peerOrder.push(pe.rightId);
-                    slot.byPeer.set(pe.rightId, []);
+                    slot.relsByPeerId.set(pe.rightId, []);
                 }
-                slot.byPeer.get(pe.rightId).push(pe);
+                slot.relsByPeerId.get(pe.rightId).push(pe);
             }
 
             const stack = document.createElement('div');
@@ -1242,7 +1223,7 @@ get_topology_data(stack_name=None, node_list=None, query=None, relation_map=None
 
             for (let i = 0; i < leftOrder.length; i++) {
                 const leftId = leftOrder[i];
-                const slot = slotByLeft.get(leftId);
+                const slot = slotByLeftId.get(leftId);
 
                 const hubLayout = document.createElement('div');
                 hubLayout.className = 'hub-layout';
@@ -1263,7 +1244,7 @@ get_topology_data(stack_name=None, node_list=None, query=None, relation_map=None
 
                 for (let j = 0; j < slot.peerOrder.length; j++) {
                     const peerId = slot.peerOrder[j];
-                    const peerEdges = slot.byPeer.get(peerId);
+                    const peerEdges = slot.relsByPeerId.get(peerId);
                     const rels = peerEdges.map(function (pe) { return pe.rel; });
 
                     const row = document.createElement('div');
@@ -1275,7 +1256,7 @@ get_topology_data(stack_name=None, node_list=None, query=None, relation_map=None
                     edgesInner.className = 'edges';
                     const rightLine = document.createElement('div');
                     rightLine.className = 'parallel-line';
-                    createEdgesInto(edgesInner, rels, leftId, attributeMap);
+                    renderEdges(edgesInner, rels, leftId, attributeMap);
                     edgesWrap.appendChild(edgesInner);
                     edgesWrap.appendChild(rightLine);
 
@@ -1345,7 +1326,7 @@ get_topology_data(stack_name=None, node_list=None, query=None, relation_map=None
                     graphContainer.appendChild(msg);
                     return;
                 }
-                initHub(graphContainer, nodes, relationships, nodeMap, focalNodeId, null);
+                initHub(graphContainer, nodes, relationships, nodeMap, focalNodeId);
             } else if (layoutMode === 'edgeRows') {
                 if (!navigatorWidgetSelection.length) {
                     const msg = document.createElement('div');
