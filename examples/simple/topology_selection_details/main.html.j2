@@ -208,14 +208,22 @@ get_topology_data(stack_name=None, node_list=None, query=None, relation_map=None
             overflow-y: visible;
         }
 
-        /* Connections column only — hub-focal stays outside so it is not an overflow ancestor. */
+        /*
+         * In hub mode the graph-container is clipped so that only the right
+         * connections pane scrolls. The focal node stays vertically centered.
+         */
+        .graph-container.hub-mode {
+            overflow: hidden;
+        }
+
+        /* Right pane scrolls independently; hub-focal is its sibling and stays put. */
         .hub-graph-inner {
             flex: 1;
             min-width: 0;
             max-width: 100%;
             height: 100%;
-            /*overflow-x: auto;
-            overscroll-behavior-x: contain;*/
+            overflow-y: auto;
+            overscroll-behavior-y: contain;
         }
 
         .hub-layout {
@@ -223,17 +231,19 @@ get_topology_data(stack_name=None, node_list=None, query=None, relation_map=None
             flex-direction: row;
             align-items: stretch;
             width: 100%;
-            min-height: 180px;
+            height: 100%;
+            min-height: 0;
             flex: 1;
         }
 
+        /* Stretches to full column height; flex centering keeps the node at the middle. */
         .hub-focal {
             display: flex;
             align-items: center;
             justify-content: center;
             flex-shrink: 0;
             padding-right: 16px;
-            align-self: flex-start;
+            align-self: center;
         }
 
         .hub-connections {
@@ -1305,6 +1315,7 @@ get_topology_data(stack_name=None, node_list=None, query=None, relation_map=None
         function initGraph(topologyData) {
             const graphContainer = document.getElementById('graph-container');
             graphContainer.innerHTML = '';
+            graphContainer.classList.toggle('hub-mode', layoutMode === 'hub');
 
             if (configError) {
                 const msg = document.createElement('div');
