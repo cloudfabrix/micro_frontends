@@ -1,0 +1,1447 @@
+{# Jinja code start #}
+{#
+get_topology_data usage (given by Purvi):
+get_topology_data(stack_name=None, node_list=None, query=None, relation_map=None, graph_name=None, db_name=None, nodes_collection=None, edges_collection=None).
+#}
+
+{#
+  ── Widget use cases ─────────────────────────────────────────────────────────
+
+  This widget is embedded in an iframe and driven by one of two context
+  sources set by the parent application.
+
+  ── Use case 1: Relationship view  (context.node_id is set) ──────────────────
+    The widget is used as a "relationship view". The user has clicked a node
+    from a node list in 3 column navigator (for example), which pushes
+    that node's id into context.node_id.
+    Layout: the selected node appears on the left as the focal node; all
+    nodes it is connected to, along with their relationship edges, fan out
+    as rows on the right.  (layout_mode = 'hub')
+
+  ── Use case 2: Navigation context view  (navigatorWidgetContext is set) ──────
+    The widget is used as a "navigation context" panel. When the user clicks
+    on a node or edge(s) inside a topology widget (or any navigator widget),
+    those objects are pushed into navigatorWidgetContext as an array.
+    The sub-layout depends on what was clicked:
+
+      • Items present and [0] has a node_id field → the user clicked node(s).
+        - Exactly 1 node selected → renders a compact node info card (icon,
+          label, layer, type, optional htmlLabel). No topology data fetch.
+          (layout_mode = 'nodeDetails')
+        - More than 1 node selected → shows a prompt to select a single node.
+
+      • Items present and [0] has no node_id → the user clicked edge(s).
+        Sub-layout is determined by how many distinct groupNode endpoints appear:
+        - 1 groupNode endpoint → single non-group node on the left, all group
+          members as peer rows on the right.  (layout_mode = 'edgeRows')
+        - 2 groupNode endpoints → stack of mini-hubs, one per left-group
+          member, right-group peers repeated only when needed to avoid
+          crossings.  (layout_mode = 'edgeRows')
+        - 0 groupNode endpoints → one left–right strip per unique node pair.
+          (layout_mode = 'edgeRows')
+
+      • navigatorWidgetContext present but empty → the user has not yet
+        clicked anything. Shows an idle prompt.
+
+  ─────────────────────────────────────────────────────────────────────────────
+#}
+
+{% set context = all_variables.context %}
+{% set fv = all_variables.fixed_variables | default({}) %}
+
+{% set navigator_widget_selection = context.navigatorWidgetContext | default([]) %}
+{% set nav_ctx_defined = 'navigatorWidgetContext' in context %}
+
+{% set layout_mode   = 'hub' %}
+{% set focal_node_id = none %}
+{% set node_list_raw = [] %}
+{% set config_error  = none %}
+
+{# Node details vars (populated when layout_mode == 'nodeDetails') #}
+{% set nd_node_id    = '' %}
+{% set nd_label      = '' %}
+{% set nd_type       = '' %}
+{% set nd_layer      = '' %}
+{% set nd_icon_url   = '' %}
+{% set nd_html_label = '' %}
+
+{# ── Layout detection ──────────────────────────────────────────────────── #}
+
+{% if navigator_widget_selection | length > 0
+      and navigator_widget_selection[0].node_id is defined
+      and navigator_widget_selection[0].node_id %}
+    {# Use case 2 / node details: user clicked a node in the navigator widget.
+       Only single-node selection is supported — multi-select shows a prompt. #}
+    {% if navigator_widget_selection | length == 1 %}
+        {% set layout_mode   = 'nodeDetails' %}
+        {% set nd_node_id    = navigator_widget_selection[0].node_id %}
+        {% set nd_label      = navigator_widget_selection[0].label     | default('') %}
+        {% set nd_type       = navigator_widget_selection[0].type      | default('') %}
+        {% set nd_layer      = navigator_widget_selection[0].layer     | default('') %}
+        {% set nd_icon_url   = navigator_widget_selection[0].iconURL   | default('') %}
+        {% set nd_html_label = navigator_widget_selection[0].htmlLabel | default('') %}
+    {% else %}
+        {% set config_error = 'Please select a single node to view its details.' %}
+    {% endif %}
+
+{% elif nav_ctx_defined and (navigator_widget_selection | length == 0) %}
+    {# Use case 2 / idle: navigatorWidgetContext is present but nothing selected yet #}
+    {% set config_error = "Please click on any node or edge to view its details." %}
+
+{% elif context.node_id is defined and context.node_id %}
+    {# Use case 1: relationship view driven by context.node_id #}
+    {% set layout_mode   = 'hub' %}
+    {% set focal_node_id = context.node_id %}
+    {% set node_list_raw = [context.node_id] %}
+
+{% else %}
+    {# Use case 2 / edge rows: user clicked edge(s) in the navigator widget #}
+    {% set ns_ids = namespace(ids=[]) %}
+    {% for item in navigator_widget_selection %}
+        {% for attr in item.displayAttributes | default([]) %}
+            {% if attr.key in ['left_id', 'right_id'] and attr.value %}
+                {% set _ = ns_ids.ids.append(attr.value) %}
+            {% endif %}
+        {% endfor %}
+    {% endfor %}
+    {% set node_list_raw = ns_ids.ids | unique | list %}
+    {% set layout_mode   = 'edgeRows' %}
+{% endif %}
+
+{# ── Topology config (not needed for nodeDetails mode) ────────────────── #}
+{% if layout_mode != 'nodeDetails' %}
+    {% set stack_name = fv.stack_name | default('', true) %}
+    {% if not stack_name %}
+        {% set stack_name = context.attrs_stack_name | default('', true) %}
+    {% endif %}
+    {% if not stack_name and not config_error %}
+        {% set config_error = 'Stack name is required. Set fixed_variables.stack_name or context.attrs_stack_name.' %}
+    {% endif %}
+
+    {% set nodes_collection = fv.nodes_collection | default(none) %}
+    {% set edges_collection = fv.edges_collection | default(none) %}
+    {% set graph_name       = fv.graph_name       | default(none) %}
+    {% set relation_map     = fv.relation_map      | default(none) %}
+
+    {% if not config_error and (node_list_raw | length) == 0 %}
+        {% if navigator_widget_selection | length == 0 %}
+            {% set config_error = 'Click on any edge in the topology to view its details.' %}
+        {% else %}
+            {% set config_error = 'No nodes could be resolved from the selected edges.' %}
+        {% endif %}
+    {% endif %}
+
+    {# Topology data is fetched client-side from query.json.j2 in chunks. #}
+    {% set topology_api_params_json = {
+        'stack_name':       stack_name,
+        'node_list':        node_list_raw,
+        'nodes_collection': nodes_collection,
+        'edges_collection': edges_collection,
+        'graph_name':       graph_name,
+        'relation_map':     relation_map
+    } | tojson %}
+{% else %}
+    {% set topology_api_params_json = '{}' %}
+{% endif %}
+
+{% set all_variables_json = all_variables | tojson %}
+{% set attribute_map_override_json = fv.attributeMap | default({}) | tojson %}
+
+{# Jinja code end #}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Relations View</title>
+    <script src="https://cdn.jsdelivr.net/npm/lodash@4.17.21/lodash.min.js"></script>
+    <style>
+        /*
+         * Embedded in an iframe inside a widget. Only `body` scrolls — `html` is fixed
+         * to the iframe height so the root element does not get its own scrollbar.
+         */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        html {
+            height: 100%;
+            width: 100%;
+            overflow: hidden;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: rgb(var(--v-theme-cfxcard));
+            color: rgb(var(--v-theme-cfxtext));
+            height: 100%;
+            width: 100%;
+            margin: 0;
+            overflow: auto;
+            overscroll-behavior: contain;
+            -webkit-overflow-scrolling: touch;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 100%;
+            height: 100%;
+            min-height: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            box-sizing: border-box;
+        }
+
+        .graph-container {
+            width: 100%;
+            max-width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: stretch;
+            justify-content: flex-start;
+            padding: 20px;
+            box-sizing: border-box;
+            overflow-x: visible;
+            overflow-y: visible;
+        }
+
+        /*
+         * In hub mode the graph-container is clipped so that only the right
+         * connections pane scrolls. The focal node stays vertically centered.
+         */
+        .graph-container.hub-mode {
+            overflow: hidden;
+        }
+
+        /* Right pane scrolls independently; hub-focal is its sibling and stays put. */
+        .hub-graph-inner {
+            flex: 1;
+            min-width: 0;
+            max-width: 100%;
+            height: 100%;
+            overflow-y: auto;
+            overscroll-behavior-y: contain;
+        }
+
+        .hub-layout {
+            display: flex;
+            flex-direction: row;
+            align-items: stretch;
+            width: 100%;
+            height: 100%;
+            min-height: 0;
+            flex: 1;
+        }
+
+        /* Stretches to full column height; flex centering keeps the node at the middle. */
+        .hub-focal {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            padding-right: 16px;
+            align-self: center;
+        }
+
+        .hub-connections {
+            display: flex;
+            flex-direction: row;
+            align-items: stretch;
+            flex: 1;
+            min-width: 0;
+        }
+
+        .hub-parallel-left {
+            flex-shrink: 0;
+            margin-right: 10px;
+        }
+
+        .hub-rows {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-start;
+            align-items: stretch;
+            gap: 40px;
+            min-width: 0;
+            padding: 8px 0 16px;
+        }
+
+        .hub-peer-row {
+            display: flex;
+            flex-direction: row;
+            align-items: center;
+            width: 100%;
+            min-width: 0;
+            padding-block: 8px;
+        }
+
+        .hub-peer-row .edges-container {
+            margin: 0 16px 0 0;
+        }
+
+        .edge-rows-stack {
+            display: flex;
+            flex-direction: column;
+            gap: 40px;
+            width: 100%;
+            min-width: 0;
+            height: 100%;
+            /*overflow-x: auto;*/
+        }
+
+        .edge-details-row {
+            display: flex;
+            flex-direction: row;
+            align-items: stretch;
+            width: 100%;
+            min-width: 0;
+        }
+
+        .edge-details-row > .node {
+            align-self: center;
+        }
+
+        .edge-details-row .edges-container {
+            flex: 1;
+            margin: 0 16px;
+            min-width: 400px;
+            align-self: stretch;
+            min-height: 48px;
+        }
+
+        .edge-details-row .edges {
+            justify-content: center;
+            min-height: 40px;
+        }
+
+        .empty-message {
+            padding: 24px;
+            color: #333;
+            color: rgb(var(--v-theme-cfxtext));
+            font-size: 14px;
+            align-self: center;
+            margin: auto;
+        }
+
+        .node {
+            height: 100px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s ease;
+            flex-shrink: 0;
+            min-width: 80px;
+        }
+
+        .node-circle {
+            width: 60px;
+            height: 60px;
+            background-color: #e3f2fd;
+            background-color: rgb(var(--v-theme-cfxcard));
+            border: 2px solid #1976d2;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s ease;
+            padding: 10px;
+        }
+
+        .node-circle img {
+            height: 100%;
+            width: 100%;
+        }
+
+        .node-label {
+            font-size: 14px;
+            font-weight: bold;
+            color: #333;
+            color: rgb(var(--v-theme-cfxtext));
+            margin-top: 8px;
+            text-align: center;
+            width: 150px;
+            word-break: break-word;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .edges-container {
+            display: flex;
+            align-items: stretch;
+            flex: 1;
+            min-width: 400px;
+        }
+
+        .parallel-line {
+            width: 4px;
+            background-color: #1976d2;
+            border-radius: 2px;
+            flex-shrink: 0;
+        }
+
+        .edges {
+            display: flex;
+            flex-direction: column;
+            justify-content: space-around;
+            flex: 1;
+            margin: 0 10px;
+            min-width: 0;
+        }
+
+        .edge {
+            display: flex;
+            align-items: center;
+            position: relative;
+            height: 40px;
+            margin: 5px 0;
+        }
+
+        .edge-line {
+            flex: 1;
+            height: 2px;
+            background-color: #666;
+            position: relative;
+            margin-right: 8px;
+            min-width: 0;
+        }
+
+        .edge.dotted .edge-line {
+            background: repeating-linear-gradient(
+                to right,
+                #666 0px,
+                #666 8px,
+                transparent 8px,
+                transparent 16px
+            );
+        }
+
+        .arrow {
+            width: 0;
+            height: 0;
+            position: absolute;
+            top: 50%;
+            transform: translateY(-50%);
+        }
+
+        .arrow.right {
+            border-left: 8px solid #666;
+            border-top: 6px solid transparent;
+            border-bottom: 6px solid transparent;
+            right: -2px;
+        }
+
+        .arrow.left {
+            border-right: 8px solid #666;
+            border-top: 6px solid transparent;
+            border-bottom: 6px solid transparent;
+            left: -2px;
+        }
+
+        .edge-label {
+            position: absolute;
+            top: -4px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 12px;
+            color: #333;
+            color: rgb(var(--v-theme-cfxtext));
+            white-space: nowrap;
+        }
+
+        .interface-label {
+            position: absolute;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 10px;
+            color: #1976d2;
+            border: 1px solid currentColor;
+            background-color: color-mix(in srgb, currentColor 10%, transparent);
+            max-width: 120px;
+            text-overflow: ellipsis;
+            overflow: hidden;
+            white-space: nowrap;
+            font-weight: 500;
+            /* Sits just above the line, below the edge-label row */
+            top: -4px;
+        }
+
+        .interface-label.left {
+            left: 10px;
+        }
+
+        .interface-label.right {
+            right: 20px;
+        }
+
+        /* Initial centered loader — shown before first chunk arrives */
+        .initial-loader {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+            width: 100%;
+            padding: 40px;
+            color: #1976d2;
+            font-size: 13px;
+        }
+
+        .initial-loader-spinner {
+            width: 32px;
+            height: 32px;
+            border: 3px solid #bbdefb;
+            border-top-color: #1976d2;
+            border-radius: 50%;
+            animation: cfx-spin 0.8s linear infinite;
+        }
+
+        /* Small corner pill — shown while subsequent chunks load (graph stays visible) */
+        .chunk-loading-pill {
+            position: fixed;
+            bottom: 12px;
+            right: 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 14px;
+            background: rgb(var(--v-theme-cfxbackground));
+            border: 1px solid #1976d2;
+            border-radius: 16px;
+            font-size: 11px;
+            color: #1976d2;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+            z-index: 100;
+        }
+
+        .chunk-loading-pill-spinner {
+            width: 12px;
+            height: 12px;
+            border: 2px solid #bbdefb;
+            border-top-color: #1976d2;
+            border-radius: 50%;
+            animation: cfx-spin 0.8s linear infinite;
+            flex-shrink: 0;
+        }
+
+        @keyframes cfx-spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+{% if layout_mode == 'nodeDetails' %}
+    <div style="height:100%;width:100%;display:flex;justify-content:center;align-items:center;background-color:rgb(var(--v-theme-cfxbackground))">
+        <div style="display:flex;align-items:center;padding:0 16px;min-width:230px">
+            <div style="height:50px;width:50px;padding:6px;border: 2px solid #1976d2;background-color:rgb(var(--v-theme-cfxbackground));border-radius:50%;flex-shrink:0;margin-right:12px">
+                <img height="100%" width="100%" src="{{ nd_icon_url }}" alt="" />
+            </div>
+            <div style="display:flex;flex-direction:column;gap:2px">
+                <p style="font-size:12px;font-weight:700;margin:0">{{ nd_label }}</p>
+                <p style="font-weight:bold;margin:0">{{ nd_layer }}</p>
+                <p style="margin:0">{{ nd_type }}</p>
+            </div>
+        </div>
+        {% if nd_html_label %}
+            <hr style="align-self:stretch;border:none;border-left:1px solid rgba(var(--v-theme-cfxtext),0.2);margin:0 8px">
+            <div style="flex:1;min-width:0;margin-left:24px;font-size:12px">
+                {{ nd_html_label | safe }}
+            </div>
+        {% endif %}
+    </div>
+{% else %}
+    <div class="container" id="relations-view">
+        <div class="graph-container" id="graph-container"></div>
+    </div>
+    <div id="chunk-loading-pill" class="chunk-loading-pill" style="display:none">
+        <div class="chunk-loading-pill-spinner"></div>
+        Loading more…
+    </div>
+{% endif %}
+    <script>
+        const layoutMode = {{ layout_mode | tojson }};
+        const focalNodeId = {{ focal_node_id | tojson }};
+        const navigatorWidgetSelection = {{ navigator_widget_selection | tojson }};
+        const configError = {{ config_error | tojson }};
+        const allVariables = {{ all_variables_json | safe }};
+        const node_list_raw = {{ node_list_raw | tojson }};
+        const topologyApiParams = {{ topology_api_params_json | safe }};
+
+        const defaultAttributeMap = {
+            nodeLabel: ['node_label', 'hostname', 'node_id'],
+            nodeIcon: 'node_type',
+            edgeCenterLabel: 'link_type',
+            edgeSourceLabel: 'local_port',
+            edgeDestLabel: 'remote_port',
+            edgeColor: 'edge_color',
+            edgeSourceLabelColor: 'source_label_outline_color',
+            edgeDestLabelColor: 'dest_label_outline_color'
+        };
+        const attributeMap = Object.assign(
+            {},
+            defaultAttributeMap,
+            {{ attribute_map_override_json | safe }}
+        );
+
+        const iconMap = window.parent?.cfxIconMap || {};
+
+        function trimId(id) {
+            if (id == null || id === '') {
+                return '';
+            }
+            return String(id).trim();
+        }
+
+        function relationshipTouchesNode(r, nodeId) {
+            const n = trimId(nodeId);
+            return trimId(r.left_id) === n || trimId(r.right_id) === n;
+        }
+
+        function getPeerNodeId(r, focusId) {
+            const f = trimId(focusId);
+            if (trimId(r.left_id) === f) {
+                return trimId(r.right_id);
+            }
+            if (trimId(r.right_id) === f) {
+                return trimId(r.left_id);
+            }
+            return '';
+        }
+
+        function getAttributeMapValue(relationship, attributeMapKey) {
+            const keyOrKeys = attributeMap[attributeMapKey];
+            if (!keyOrKeys) {
+                return '';
+            }
+            const keys = Array.isArray(keyOrKeys) ? keyOrKeys : [keyOrKeys];
+            const displayAttrs = relationship.displayAttributes;
+            for (let ki = 0; ki < keys.length; ki++) {
+                const key = keys[ki];
+                const value = _.get(relationship, key);
+                if (value !== undefined && value !== null && value !== '') {
+                    return String(value);
+                }
+                if (displayAttrs && Array.isArray(displayAttrs)) {
+                    const displayAttr = displayAttrs.find(function (attr) {
+                        return attr.key === key;
+                    });
+                    if (
+                        displayAttr &&
+                        displayAttr.value !== undefined &&
+                        displayAttr.value !== null &&
+                        displayAttr.value !== ''
+                    ) {
+                        return String(displayAttr.value);
+                    }
+                }
+            }
+            return '';
+        }
+
+        function resolveIconSrc(node, map, amap) {
+            const nodeIconKeys = Array.isArray(amap.nodeIcon) ? amap.nodeIcon : [amap.nodeIcon];
+            let nodeIcon = '';
+            for (let i = 0; i < nodeIconKeys.length; i++) {
+                const candidate = _.get(node, nodeIconKeys[i], '');
+                if (candidate && candidate !== 'Not Available') {
+                    nodeIcon = candidate;
+                    break;
+                }
+            }
+            if (!nodeIcon) {
+                const defaultCandidate = _.get(node, defaultAttributeMap.nodeIcon, '');
+                if (defaultCandidate && defaultCandidate !== 'Not Available') {
+                    nodeIcon = defaultCandidate;
+                }
+            }
+            //console.log('resolveIconSrc: node', node);
+            //console.log('resolveIconSrc: nodeIconKeys', nodeIconKeys);
+            //console.log('resolveIconSrc: nodeIcon', nodeIcon);
+            //console.log('resolveIconSrc: map', map);
+            //console.log('resolveIconSrc: amap', amap);
+            if (nodeIcon && (nodeIcon.startsWith('http://') || nodeIcon.startsWith('https://'))) {
+                return nodeIcon;
+            }
+            if (nodeIcon && map[nodeIcon]) {
+                return '/' + map[nodeIcon];
+            }
+            return '/assets/img/blueprints/canvas/empty_icon.png';
+        }
+
+        function createNodeEl(node, idSuffix, amap) {
+            const div = document.createElement('div');
+            div.className = 'node';
+            const safeId = String(idSuffix).replace(/[^a-zA-Z0-9_-]/g, '_');
+            div.id = 'node-' + safeId;
+            const label = getAttributeMapValue(node, 'nodeLabel');
+            const iconSrc = resolveIconSrc(node, iconMap, amap);
+            div.innerHTML =
+                '<div class="node-circle"><img src="" alt="" /></div><div class="node-label"></div>';
+            div.querySelector('img').src = iconSrc;
+            const nodeLabelEl = div.querySelector('.node-label');
+            nodeLabelEl.textContent = label;
+            nodeLabelEl.setAttribute('title', label);
+            return div;
+        }
+
+        function buildPseudoFocal(focusId, rels) {
+            const r = rels.find(function (x) {
+                return trimId(x.left_id) === focusId;
+            });
+            if (r) {
+                return {
+                    node_id: focusId,
+                    node_label: r.left_label,
+                    hostname: r.left_label,
+                    node_type: r.left_node_type,
+                    iconURL: 'Not Available'
+                };
+            }
+            const r2 = rels.find(function (x) {
+                return trimId(x.right_id) === focusId;
+            });
+            if (!r2) {
+                return {
+                    node_id: focusId,
+                    node_label: focusId,
+                    hostname: focusId,
+                    node_type: '',
+                    iconURL: 'Not Available'
+                };
+            }
+            return {
+                node_id: focusId,
+                node_label: r2.right_label,
+                hostname: r2.right_label,
+                node_type: r2.right_node_type,
+                iconURL: 'Not Available'
+            };
+        }
+
+        function pseudoNodeForPeer(peerId, rels) {
+            const p = trimId(peerId);
+            const r = rels[0];
+            if (trimId(r.left_id) === p) {
+                return {
+                    node_id: p,
+                    node_label: r.left_label,
+                    hostname: r.left_label,
+                    node_type: r.left_node_type,
+                    iconURL: 'Not Available'
+                };
+            }
+            return {
+                node_id: p,
+                node_label: r.right_label,
+                hostname: r.right_label,
+                node_type: r.right_node_type,
+                iconURL: 'Not Available'
+            };
+        }
+
+        function renderEdges(edgesContainer, relationships, focusId, amap) {
+            relationships.forEach(function (relationship) {
+                const edgeDiv = document.createElement('div');
+                edgeDiv.className = 'edge';
+                if (relationship.dotted) {
+                    edgeDiv.classList.add('dotted');
+                }
+
+                const edgeColor = getAttributeMapValue(relationship, 'edgeColor') || '#666';
+                const edgeLine = document.createElement('div');
+                edgeLine.className = 'edge-line';
+
+                if (relationship.dotted) {
+                    edgeLine.style.background =
+                        'repeating-linear-gradient(to right, ' +
+                        edgeColor +
+                        ' 0px, ' +
+                        edgeColor +
+                        ' 8px, transparent 8px, transparent 16px)';
+                } else {
+                    edgeLine.style.backgroundColor = edgeColor;
+                }
+
+                const isRightToLeft =
+                    trimId(relationship.left_id) !== focusId &&
+                    trimId(relationship.right_id) === focusId;
+                const isDirectionless = relationship.direction === 'NO_DIRECTION';
+
+                const arrow = document.createElement('div');
+                arrow.className = 'arrow ' + (isRightToLeft ? 'left' : 'right');
+                if (isRightToLeft) {
+                    arrow.style.borderRightColor = edgeColor;
+                } else {
+                    arrow.style.borderLeftColor = edgeColor;
+                }
+
+                const edgeLabel = document.createElement('div');
+                edgeLabel.className = 'edge-label';
+                let centerText = getAttributeMapValue(relationship, 'edgeCenterLabel');
+                if (!centerText) {
+                    centerText = relationship.relation_type || '';
+                }
+                edgeLabel.textContent = centerText;
+
+                let sourceInterfaceValue;
+                let destInterfaceValue;
+                if (focusId === trimId(relationship.left_id)) {
+                    sourceInterfaceValue = getAttributeMapValue(relationship, 'edgeSourceLabel');
+                    destInterfaceValue = getAttributeMapValue(relationship, 'edgeDestLabel');
+                } else {
+                    sourceInterfaceValue = getAttributeMapValue(relationship, 'edgeDestLabel');
+                    destInterfaceValue = getAttributeMapValue(relationship, 'edgeSourceLabel');
+                }
+
+                const sourceLabelColor =
+                    getAttributeMapValue(relationship, 'edgeSourceLabelColor') || '#1976d2';
+                const destLabelColor =
+                    getAttributeMapValue(relationship, 'edgeDestLabelColor') || '#1976d2';
+
+                let sourceInterfaceLabel;
+                if (sourceInterfaceValue) {
+                    sourceInterfaceLabel = document.createElement('p');
+                    sourceInterfaceLabel.title = sourceInterfaceValue;
+                    sourceInterfaceLabel.className =
+                        'interface-label ' + (isRightToLeft ? 'right' : 'left');
+                    sourceInterfaceLabel.textContent = sourceInterfaceValue;
+                    sourceInterfaceLabel.style.color = sourceLabelColor;
+                }
+
+                let destInterfaceLabel;
+                if (destInterfaceValue) {
+                    destInterfaceLabel = document.createElement('p');
+                    destInterfaceLabel.title = destInterfaceValue;
+                    destInterfaceLabel.className =
+                        'interface-label ' + (isRightToLeft ? 'left' : 'right');
+                    destInterfaceLabel.textContent = destInterfaceValue;
+                    destInterfaceLabel.style.color = destLabelColor;
+                }
+
+                if (!isDirectionless) {
+                    edgeLine.appendChild(arrow);
+                }
+                edgeDiv.appendChild(edgeLine);
+                edgeDiv.appendChild(edgeLabel);
+                if (sourceInterfaceLabel) {
+                    edgeDiv.appendChild(sourceInterfaceLabel);
+                }
+                if (destInterfaceLabel) {
+                    edgeDiv.appendChild(destInterfaceLabel);
+                }
+                edgesContainer.appendChild(edgeDiv);
+            });
+        }
+
+        function buildEdgeDetailsStrip(rels, visualLeftId) {
+            const edgesWrap = document.createElement('div');
+            edgesWrap.className = 'edges-container';
+            const leftLine = document.createElement('div');
+            leftLine.className = 'parallel-line';
+            const edgesInner = document.createElement('div');
+            edgesInner.className = 'edges';
+            const rightLine = document.createElement('div');
+            rightLine.className = 'parallel-line';
+            if (rels.length) {
+                renderEdges(edgesInner, rels, visualLeftId, attributeMap);
+            }
+            edgesWrap.appendChild(leftLine);
+            edgesWrap.appendChild(edgesInner);
+            edgesWrap.appendChild(rightLine);
+            return edgesWrap;
+        }
+
+        function isGroupId(s) {
+            return typeof s === 'string' && s.indexOf('groupNode') === 0;
+        }
+
+        function getDisplayAttrValue(edgeObj, key) {
+            const attrs = edgeObj.displayAttributes || [];
+            for (let i = 0; i < attrs.length; i++) {
+                const a = attrs[i];
+                if (a.key === key && a.value !== undefined && a.value !== null && a.value !== '') {
+                    return String(a.value);
+                }
+            }
+            return '';
+        }
+
+        /**
+         * Adapt a navigator edge into a relationship-shaped object so the existing
+         * renderEdges / getAttributeMapValue helpers work unchanged.
+         * Spreads all edge properties (preserving displayAttributes for arbitrary key
+         * lookups), then adds computed fields and hoists the fields that are accessed
+         * directly by downstream code rather than via getAttributeMapValue.
+         */
+        function buildRelFromNavigatorEdge(edgeObj) {
+            const hasArrow =
+                (edgeObj.targetArrowShape && edgeObj.targetArrowShape !== 'none') ||
+                (edgeObj.sourceArrowShape && edgeObj.sourceArrowShape !== 'none');
+            return Object.assign({}, edgeObj, {
+                direction:       hasArrow ? 'OUT' : 'NO_DIRECTION',
+                dotted:          edgeObj.lineStyle === 'dashed' || edgeObj.dotted === true,
+                edge_color:      edgeObj.lineColor || '',
+                left_id:         getDisplayAttrValue(edgeObj, 'left_id'),
+                right_id:        getDisplayAttrValue(edgeObj, 'right_id'),
+                left_label:      getDisplayAttrValue(edgeObj, 'left_label'),
+                right_label:     getDisplayAttrValue(edgeObj, 'right_label'),
+                left_node_type:  getDisplayAttrValue(edgeObj, 'left_node_type'),
+                right_node_type: getDisplayAttrValue(edgeObj, 'right_node_type'),
+                relation_type:   getDisplayAttrValue(edgeObj, 'relation_type'),
+            });
+        }
+
+        function parseNavigatorEdge(edgeObj) {
+            const leftId = trimId(getDisplayAttrValue(edgeObj, 'left_id'));
+            const rightId = trimId(getDisplayAttrValue(edgeObj, 'right_id'));
+            const leftIsGroup = isGroupId(edgeObj.source);
+            const rightIsGroup = isGroupId(edgeObj.target);
+            return {
+                leftId: leftId,
+                rightId: rightId,
+                leftIsGroup: leftIsGroup,
+                rightIsGroup: rightIsGroup,
+                leftGroupId: leftIsGroup ? String(edgeObj.source) : '',
+                rightGroupId: rightIsGroup ? String(edgeObj.target) : '',
+                rel: buildRelFromNavigatorEdge(edgeObj)
+            };
+        }
+
+        function parseAllNavigatorEdges() {
+            const edges = [];
+            const groupIds = new Set();
+            let leftGroupId = '';
+            let rightGroupId = '';
+            for (let i = 0; i < navigatorWidgetSelection.length; i++) {
+                const parsed = parseNavigatorEdge(navigatorWidgetSelection[i]);
+                if (!parsed.leftId || !parsed.rightId) {
+                    continue;
+                }
+                edges.push(parsed);
+                if (parsed.leftGroupId) {
+                    groupIds.add(parsed.leftGroupId);
+                    if (!leftGroupId) {
+                        leftGroupId = parsed.leftGroupId;
+                    }
+                }
+                if (parsed.rightGroupId) {
+                    groupIds.add(parsed.rightGroupId);
+                    if (!rightGroupId) {
+                        rightGroupId = parsed.rightGroupId;
+                    }
+                }
+            }
+            return {
+                edges: edges,
+                groupIds: groupIds,
+                leftGroupId: leftGroupId,
+                rightGroupId: rightGroupId
+            };
+        }
+
+        function pseudoNodeFromRel(realId, rel, side) {
+            const label =
+                side === 'left'
+                    ? rel && rel.left_label
+                    : rel && rel.right_label;
+            return {
+                node_id: realId,
+                node_label: label || realId,
+                hostname: label || realId,
+                node_type: '',
+                iconURL: 'Not Available'
+            };
+        }
+
+        function resolveNavigatorNode(realId, parsedEdge, side, nodeMap) {
+            const fromMap = nodeMap.get(realId);
+            if (fromMap) {
+                return fromMap;
+            }
+            return pseudoNodeFromRel(realId, parsedEdge.rel, side);
+        }
+
+        function initHub(graphContainer, nodes, relationships, nodeMap, focusId) {
+            let filtered = relationships.filter(function (r) {
+                return relationshipTouchesNode(r, focusId);
+            });
+
+            if (!filtered.length) {
+                const msg = document.createElement('div');
+                msg.className = 'empty-message';
+                msg.textContent = 'No relationships to display.';
+                graphContainer.appendChild(msg);
+                return;
+            }
+
+            let focalNode = nodeMap.get(focusId);
+            // This can happen if the focus node is not in the node map, which can happen if the node is not in the topology data yet (maybe in next chunk?).
+            if (!focalNode) {
+                focalNode = buildPseudoFocal(focusId, filtered);
+            }
+
+            const hubLayout = document.createElement('div');
+            hubLayout.className = 'hub-layout';
+
+            const focalCol = document.createElement('div');
+            focalCol.className = 'hub-focal';
+            focalCol.appendChild(createNodeEl(focalNode, 'focal', attributeMap));
+
+            const hubConnections = document.createElement('div');
+            hubConnections.className = 'hub-connections';
+
+            const leftParallel = document.createElement('div');
+            leftParallel.className = 'parallel-line hub-parallel-left';
+
+            const rowsCol = document.createElement('div');
+            rowsCol.className = 'hub-rows';
+
+            const relsByPeerId = new Map();
+            for (let i = 0; i < filtered.length; i++) {
+                const r = filtered[i];
+                const peer = getPeerNodeId(r, focusId);
+                if (!peer) {
+                    continue;
+                }
+                if (!relsByPeerId.has(peer)) {
+                    relsByPeerId.set(peer, []);
+                }
+                relsByPeerId.get(peer).push(r);
+            }
+
+            const sortedPeers = Array.from(relsByPeerId.keys()).sort(function (a, b) {
+                return String(a).localeCompare(String(b));
+            });
+
+            for (let i = 0; i < sortedPeers.length; i++) {
+                const peerId = sortedPeers[i];
+                const rels = relsByPeerId.get(peerId);
+                const row = document.createElement('div');
+                row.className = 'hub-peer-row';
+
+                const edgesWrap = document.createElement('div');
+                edgesWrap.className = 'edges-container';
+                const edgesInner = document.createElement('div');
+                edgesInner.className = 'edges';
+                const rightLine = document.createElement('div');
+                rightLine.className = 'parallel-line';
+                renderEdges(edgesInner, rels, focusId, attributeMap);
+                edgesWrap.appendChild(edgesInner);
+                edgesWrap.appendChild(rightLine);
+
+                const peerNode = nodeMap.get(peerId) || pseudoNodeForPeer(peerId, rels);
+                const peerEl = createNodeEl(peerNode, peerId, attributeMap);
+
+                row.appendChild(edgesWrap);
+                row.appendChild(peerEl);
+                rowsCol.appendChild(row);
+            }
+
+            hubConnections.appendChild(leftParallel);
+            hubConnections.appendChild(rowsCol);
+
+            const scrollInner = document.createElement('div');
+            scrollInner.className = 'hub-graph-inner';
+            scrollInner.appendChild(hubConnections);
+
+            hubLayout.appendChild(focalCol);
+            hubLayout.appendChild(scrollInner);
+            graphContainer.appendChild(hubLayout);
+        }
+
+        /** Case C: no groupNode endpoints — one row per unique (left,right) pair. */
+        function renderPerEdgeRows(graphContainer, parsedEdges, nodeMap) {
+            const stack = document.createElement('div');
+            stack.className = 'edge-rows-stack';
+
+            const edgesByNodePair = new Map();
+            const orderedPairKeys = [];
+            for (let i = 0; i < parsedEdges.length; i++) {
+                const pe = parsedEdges[i];
+                const a = pe.leftId;
+                const b = pe.rightId;
+                const key = a < b ? a + '|' + b : b + '|' + a;
+                if (!edgesByNodePair.has(key)) {
+                    edgesByNodePair.set(key, { leftId: a, rightId: b, edges: [] });
+                    orderedPairKeys.push(key);
+                }
+                edgesByNodePair.get(key).edges.push(pe);
+            }
+
+            for (let i = 0; i < orderedPairKeys.length; i++) {
+                const group = edgesByNodePair.get(orderedPairKeys[i]);
+                const rels = group.edges.map(function (pe) { return pe.rel; });
+                const leftNode = resolveNavigatorNode(group.leftId, group.edges[0], 'left', nodeMap);
+                const rightNode = resolveNavigatorNode(group.rightId, group.edges[0], 'right', nodeMap);
+
+                const row = document.createElement('div');
+                row.className = 'edge-details-row';
+                row.appendChild(createNodeEl(leftNode, group.leftId, attributeMap));
+                row.appendChild(buildEdgeDetailsStrip(rels, group.leftId));
+                row.appendChild(createNodeEl(rightNode, group.rightId, attributeMap));
+
+                stack.appendChild(row);
+            }
+
+            const scrollInner = document.createElement('div');
+            scrollInner.className = 'hub-graph-inner';
+            scrollInner.appendChild(stack);
+            graphContainer.appendChild(scrollInner);
+        }
+
+        /**
+         * Case A: exactly one groupNode side — single (non-group) node renders on the
+         * visual left as the focal; unique group members stack as peers on the right.
+         */
+        function renderSingleGroupHub(graphContainer, parsed, nodeMap) {
+            const groupOnLeft = parsed.leftGroupId !== '';
+
+            let singleNodeId = '';
+            const memberOrder = [];
+            const memberSeen = new Set();
+            const edgesByMember = new Map();
+            let firstParsedEdge = null;
+
+            for (let i = 0; i < parsed.edges.length; i++) {
+                const pe = parsed.edges[i];
+                const memberId = groupOnLeft ? pe.leftId : pe.rightId;
+                const singleId = groupOnLeft ? pe.rightId : pe.leftId;
+                if (!singleNodeId) {
+                    singleNodeId = singleId;
+                    firstParsedEdge = pe;
+                } else if (singleNodeId !== singleId) {
+                    console.warn(
+                        'topology_relations_view: navigator edges have inconsistent non-group endpoint; using "' +
+                            singleNodeId +
+                            '".'
+                    );
+                }
+                if (!memberSeen.has(memberId)) {
+                    memberSeen.add(memberId);
+                    memberOrder.push(memberId);
+                    edgesByMember.set(memberId, []);
+                }
+                edgesByMember.get(memberId).push(pe);
+            }
+
+            if (!singleNodeId) {
+                const msg = document.createElement('div');
+                msg.className = 'empty-message';
+                msg.textContent = 'No valid non-group endpoint in navigatorWidgetContext.';
+                graphContainer.appendChild(msg);
+                return;
+            }
+
+            const focalSide = groupOnLeft ? 'right' : 'left';
+            const memberSide = groupOnLeft ? 'left' : 'right';
+            const focalNode = resolveNavigatorNode(singleNodeId, firstParsedEdge, focalSide, nodeMap);
+
+            const hubLayout = document.createElement('div');
+            hubLayout.className = 'hub-layout';
+
+            const focalCol = document.createElement('div');
+            focalCol.className = 'hub-focal';
+            focalCol.appendChild(createNodeEl(focalNode, 'focal', attributeMap));
+
+            const hubConnections = document.createElement('div');
+            hubConnections.className = 'hub-connections';
+
+            const leftParallel = document.createElement('div');
+            leftParallel.className = 'parallel-line hub-parallel-left';
+
+            const rowsCol = document.createElement('div');
+            rowsCol.className = 'hub-rows';
+
+            for (let i = 0; i < memberOrder.length; i++) {
+                const memberId = memberOrder[i];
+                const memberEdges = edgesByMember.get(memberId);
+                const rels = memberEdges.map(function (pe) { return pe.rel; });
+
+                const row = document.createElement('div');
+                row.className = 'hub-peer-row';
+
+                const edgesWrap = document.createElement('div');
+                edgesWrap.className = 'edges-container';
+                const edgesInner = document.createElement('div');
+                edgesInner.className = 'edges';
+                const rightLine = document.createElement('div');
+                rightLine.className = 'parallel-line';
+                renderEdges(edgesInner, rels, singleNodeId, attributeMap);
+                edgesWrap.appendChild(edgesInner);
+                edgesWrap.appendChild(rightLine);
+
+                const memberNode = resolveNavigatorNode(memberId, memberEdges[0], memberSide, nodeMap);
+                const memberEl = createNodeEl(memberNode, memberId, attributeMap);
+
+                row.appendChild(edgesWrap);
+                row.appendChild(memberEl);
+                rowsCol.appendChild(row);
+            }
+
+            hubConnections.appendChild(leftParallel);
+            hubConnections.appendChild(rowsCol);
+
+            const scrollInner = document.createElement('div');
+            scrollInner.className = 'hub-graph-inner';
+            scrollInner.appendChild(hubConnections);
+
+            hubLayout.appendChild(focalCol);
+            hubLayout.appendChild(scrollInner);
+            graphContainer.appendChild(hubLayout);
+        }
+
+        /**
+         * Case B: both sides grouped — render one mini-hub per unique left-group
+         * member. Right-group members repeat across mini-hubs only when they have
+         * more than one left peer (no crossings, no unnecessary duplication).
+         */
+        function renderTwoGroupBipartite(graphContainer, parsed, nodeMap) {
+            const leftOrder = [];
+            const leftSeen = new Set();
+            const slotByLeftId = new Map();
+
+            for (let i = 0; i < parsed.edges.length; i++) {
+                const pe = parsed.edges[i];
+                if (!leftSeen.has(pe.leftId)) {
+                    leftSeen.add(pe.leftId);
+                    leftOrder.push(pe.leftId);
+                    slotByLeftId.set(pe.leftId, {
+                        sample: pe,
+                        peerOrder: [],
+                        peerSeen: new Set(),
+                        relsByPeerId: new Map()
+                    });
+                }
+                const slot = slotByLeftId.get(pe.leftId);
+                if (!slot.peerSeen.has(pe.rightId)) {
+                    slot.peerSeen.add(pe.rightId);
+                    slot.peerOrder.push(pe.rightId);
+                    slot.relsByPeerId.set(pe.rightId, []);
+                }
+                slot.relsByPeerId.get(pe.rightId).push(pe);
+            }
+
+            const stack = document.createElement('div');
+            stack.className = 'edge-rows-stack';
+
+            for (let i = 0; i < leftOrder.length; i++) {
+                const leftId = leftOrder[i];
+                const slot = slotByLeftId.get(leftId);
+
+                const hubLayout = document.createElement('div');
+                hubLayout.className = 'hub-layout';
+
+                const focalCol = document.createElement('div');
+                focalCol.className = 'hub-focal';
+                const leftNode = resolveNavigatorNode(leftId, slot.sample, 'left', nodeMap);
+                focalCol.appendChild(createNodeEl(leftNode, 'left-' + i, attributeMap));
+
+                const hubConnections = document.createElement('div');
+                hubConnections.className = 'hub-connections';
+
+                const leftParallel = document.createElement('div');
+                leftParallel.className = 'parallel-line hub-parallel-left';
+
+                const rowsCol = document.createElement('div');
+                rowsCol.className = 'hub-rows';
+
+                for (let j = 0; j < slot.peerOrder.length; j++) {
+                    const peerId = slot.peerOrder[j];
+                    const peerEdges = slot.relsByPeerId.get(peerId);
+                    const rels = peerEdges.map(function (pe) { return pe.rel; });
+
+                    const row = document.createElement('div');
+                    row.className = 'hub-peer-row';
+
+                    const edgesWrap = document.createElement('div');
+                    edgesWrap.className = 'edges-container';
+                    const edgesInner = document.createElement('div');
+                    edgesInner.className = 'edges';
+                    const rightLine = document.createElement('div');
+                    rightLine.className = 'parallel-line';
+                    renderEdges(edgesInner, rels, leftId, attributeMap);
+                    edgesWrap.appendChild(edgesInner);
+                    edgesWrap.appendChild(rightLine);
+
+                    const peerNode = resolveNavigatorNode(peerId, peerEdges[0], 'right', nodeMap);
+                    const peerEl = createNodeEl(peerNode, 'right-' + i + '-' + j, attributeMap);
+
+                    row.appendChild(edgesWrap);
+                    row.appendChild(peerEl);
+                    rowsCol.appendChild(row);
+                }
+
+                hubConnections.appendChild(leftParallel);
+                hubConnections.appendChild(rowsCol);
+                hubLayout.appendChild(focalCol);
+                hubLayout.appendChild(hubConnections);
+                stack.appendChild(hubLayout);
+            }
+
+            const scrollInner = document.createElement('div');
+            scrollInner.className = 'hub-graph-inner';
+            scrollInner.appendChild(stack);
+            graphContainer.appendChild(scrollInner);
+        }
+
+        function initEdgeRows(graphContainer, nodeMap) {
+            const parsed = parseAllNavigatorEdges();
+
+            if (!parsed.edges.length) {
+                const msg = document.createElement('div');
+                msg.className = 'empty-message';
+                msg.textContent = 'No valid edges in navigatorWidgetContext.';
+                graphContainer.appendChild(msg);
+                return;
+            }
+
+            const groupCount = parsed.groupIds.size;
+            if (groupCount === 0) {
+                renderPerEdgeRows(graphContainer, parsed.edges, nodeMap);
+            } else if (groupCount === 1) {
+                renderSingleGroupHub(graphContainer, parsed, nodeMap);
+            } else {
+                renderTwoGroupBipartite(graphContainer, parsed, nodeMap);
+            }
+        }
+
+        function initGraph(topologyData) {
+            const graphContainer = document.getElementById('graph-container');
+            graphContainer.innerHTML = '';
+            graphContainer.classList.toggle('hub-mode', layoutMode === 'hub');
+
+            if (configError) {
+                const msg = document.createElement('div');
+                msg.className = 'empty-message';
+                msg.textContent = configError;
+                graphContainer.appendChild(msg);
+                return;
+            }
+
+            const nodes = topologyData?.stack?.nodes || [];
+            const relationships = topologyData?.stack?.relationships || [];
+            const nodeMap = new Map(nodes.map(function (n) { return [n.node_id, n]; }));
+
+            if (layoutMode === 'hub') {
+                if (!focalNodeId) {
+                    const msg = document.createElement('div');
+                    msg.className = 'empty-message';
+                    msg.textContent = 'No focal node (context.node_id) for hub layout.';
+                    graphContainer.appendChild(msg);
+                    return;
+                }
+                initHub(graphContainer, nodes, relationships, nodeMap, focalNodeId);
+            } else if (layoutMode === 'edgeRows') {
+                if (!navigatorWidgetSelection.length) {
+                    const msg = document.createElement('div');
+                    msg.className = 'empty-message';
+                    msg.textContent = 'No edges in context.navigatorWidgetContext.';
+                    graphContainer.appendChild(msg);
+                    return;
+                }
+                initEdgeRows(graphContainer, nodeMap);
+            } else {
+                const msg = document.createElement('div');
+                msg.className = 'empty-message';
+                msg.textContent = 'Unknown layout mode.';
+                graphContainer.appendChild(msg);
+                return;
+            }
+
+            console.log('topology_relations_view widget: topologyData', topologyData);
+            console.log('topology_relations_view widget: allVariables', allVariables);
+            console.log('topology_relations_view widget: node_list_raw', node_list_raw);
+        }
+
+        function showInitialLoader(container) {
+            container.innerHTML = '';
+            const loader = document.createElement('div');
+            loader.className = 'initial-loader';
+            loader.innerHTML =
+                '<div class="initial-loader-spinner"></div><span>Loading\u2026</span>';
+            container.appendChild(loader);
+        }
+
+        function showChunkPill() {
+            document.getElementById('chunk-loading-pill').style.display = 'flex';
+        }
+
+        function hideChunkPill() {
+            document.getElementById('chunk-loading-pill').style.display = 'none';
+        }
+
+        function fetchChunk(chunkOffset) {
+            const q = Object.assign({}, topologyApiParams, { chunk_offset: chunkOffset });
+            return fetch('query.json?query=' + btoa(JSON.stringify(q)))
+                .then(function (r) { return r.json(); });
+        }
+
+        async function loadAndRender() {
+            if (layoutMode === 'nodeDetails') { return; }
+
+            const graphContainer = document.getElementById('graph-container');
+
+            if (configError) {
+                initGraph({});
+                return;
+            }
+
+            showInitialLoader(graphContainer);
+            let liveData = null;
+
+            try {
+                const firstChunk = await fetchChunk(0);
+                liveData = firstChunk;
+                initGraph(liveData);
+
+                while (liveData?.chunk_info?.has_more_results) {
+                    showChunkPill();
+                    const next = await fetchChunk(liveData.chunk_info.next_chunk_offset);
+                    liveData = {
+                        chunk_info: next.chunk_info,
+                        stack: {
+                            name:          liveData.stack.name,
+                            description:   liveData.stack.description,
+                            hierarchical:  liveData.stack.hierarchical,
+                            nodes:         liveData.stack.nodes.concat(next.stack.nodes || []),
+                            relationships: liveData.stack.relationships.concat(next.stack.relationships || [])
+                        }
+                    };
+                    initGraph(liveData);
+                }
+            } catch (err) {
+                console.error('topology_relations_view: fetch error', err);
+                initGraph({});
+            } finally {
+                hideChunkPill();
+            }
+        }
+
+        // Sync theme CSS variables and color-scheme from the parent Vuetify application.
+        // Vuetify 3 scopes its theme class (v-theme--dark / v-theme--light) and CSS custom
+        // properties to the .v-application element, not to <html>.
+        function syncThemeFromParent() {
+            const vApp = parent.document.querySelector('.v-application');
+            if (!vApp) {
+                return;
+            }
+            const s = getComputedStyle(vApp);
+            document.documentElement.style.setProperty('--v-theme-cfxcard',       s.getPropertyValue('--v-theme-cfxcard').trim());
+            document.documentElement.style.setProperty('--v-theme-cfxtext',       s.getPropertyValue('--v-theme-cfxtext').trim());
+            document.documentElement.style.setProperty('--v-theme-cfxbackground', s.getPropertyValue('--v-theme-cfxbackground').trim());
+            document.documentElement.style.colorScheme =
+                vApp.classList.contains('v-theme--dark') ? 'dark' : 'light';
+        }
+
+        syncThemeFromParent();
+        loadAndRender();
+    </script>
+</body>
+</html>

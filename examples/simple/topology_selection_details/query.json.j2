@@ -1,0 +1,13 @@
+{% set q = all_variables.query | default({}) %}
+
+{% set result = engine.get_topology_data(
+    stack_name=q.stack_name | default(none),
+    node_list=q.node_list | default(none),
+    nodes_collection=q.nodes_collection | default(none),
+    edges_collection=q.edges_collection | default(none),
+    graph_name=q.graph_name | default(none),
+    relation_map=q.relation_map | default(none),
+    chunk_offset=q.chunk_offset | default(0)
+) %}
+
+{{ result | tojson | safe }}
